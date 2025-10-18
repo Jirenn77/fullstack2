@@ -1,0 +1,580 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* Hide scrollbar by default, show on hover */
+.scrollbar-hover::-webkit-scrollbar {
+  width: 6px;
+}
+.scrollbar-hover::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-hover::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+.scrollbar-hover {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+}
+
+/* Hide scrollbar unless hovered */
+.scrollbar-hover:not(:hover)::-webkit-scrollbar {
+  width: 0px;
+}
+.scrollbar-hover:not(:hover) {
+  scrollbar-width: none; /* Firefox */
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Hide scrollbar but allow scrolling */
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.hide-scrollbar {
+  -ms-overflow-style: none;  /* IE 10+ */
+  scrollbar-width: none;     /* Firefox */
+}
+
+/* global.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --primary: #047857; /* Slightly darker emerald for better contrast */
+  --primary-light: #059669;
+  --primary-lighter: #10b981;
+  --primary-lightest: #d1fae5;
+  --secondary: #f59e0b;
+  --accent: #3b82f6;
+  --danger: #ef4444;
+  --text-primary: #111827;
+  --text-secondary: #374151;
+  --bg-primary: #f9fafb;
+  --bg-secondary: #f3f4f6;
+}
+
+/* Smooth transitions for all interactive elements */
+* {
+  transition: background-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--primary-light);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--primary);
+}
+
+/* Animation classes */
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse-slow {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+/* Custom tooltip */
+[data-tooltip] {
+  position: relative;
+}
+
+[data-tooltip]:hover::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--text-primary);
+  color: white;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  z-index: 50;
+  margin-bottom: 0.5rem;
+}
+
+/* Custom chart animations */
+.chart-bar {
+  transform-origin: bottom;
+  animation: chart-grow 0.8s ease-out forwards;
+}
+
+@keyframes chart-grow {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+.pie {
+  border-radius: 9999px;
+  background: conic-gradient(
+    var(--c1) 0% var(--v1),
+    var(--c2) var(--v1) var(--v2),
+    var(--c3) var(--v2) var(--v3),
+    var(--c4) var(--v3) 100%
+  );
+}
+
+/* 1. Global Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(0, 0, 0, 0.3);
+}
+
+/* 2. Hide Scrollbar Utility */
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* 3. Page container layout (for consistent full-height layout) */
+.page-container {
+  @apply min-h-screen w-full bg-gray-50 text-gray-900;
+}
+
+/* 4. Card style (reusable container card) */
+.card {
+  @apply bg-white border border-gray-200 rounded-xl shadow-sm p-6;
+}
+
+/* 5. Section headers */
+.section-title {
+  @apply text-lg font-semibold mb-4 flex items-center text-gray-800;
+}
+
+/* 6. Step indicator circle */
+.step-circle {
+  @apply w-10 h-10 rounded-full flex items-center justify-center border-2;
+}
+
+/* 7. Button styles (reusable base) */
+.btn {
+  @apply py-2 px-4 rounded-lg font-medium transition-all;
+}
+.btn-primary {
+  @apply bg-emerald-600 hover:bg-emerald-700 text-white;
+}
+.btn-secondary {
+  @apply bg-gray-200 hover:bg-gray-300 text-gray-800;
+}
+.btn-danger {
+  @apply bg-red-500 hover:bg-red-600 text-white;
+}
+
+/* 8. Input & Select fields */
+.input-field {
+  @apply w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-transparent;
+}
+
+/* 9. Modal base wrapper */
+.modal-backdrop {
+  @apply fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center;
+}
+
+/* 10. Modal content */
+.modal-content {
+  @apply bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto p-8 hide-scrollbar;
+}
+
+
+
+
+:focus-visible {
+  outline: 2px solid var(--primary-light);
+  outline-offset: 2px;
+}
+
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    #f0f0f0 25%,
+    #e0e0e0 50%,
+    #f0f0f0 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.2s infinite ease-in-out;
+  border-radius: 0.25rem;
+}
+
+@keyframes skeleton-loading {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+
+.fade-in {
+  animation: fadeIn 0.4s ease-in-out both;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+
+:root {
+  font-size: 16px;
+}
+
+@media (min-width: 768px) {
+  :root {
+    font-size: 17px;
+  }
+}
+
+@media (min-width: 1024px) {
+  :root {
+    font-size: 18px;
+  }
+} 
+
+.glass {
+  backdrop-filter: blur(10px);
+  background-color: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+
+.bg-gradient-primary {
+  background: linear-gradient(135deg, var(--primary), var(--primary-light));
+  color: white;
+}
+
+
+
+.sidebar {
+  width: 250px;
+  height: 100vh;
+  background: #2c3e50;
+  color: white;
+  display: flex;
+  flex-direction: column;
+  transition: all 0.3s;
+  box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+}
+
+.sidebar-header {
+  padding: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.collapse-toggle {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 1.5rem;
+  cursor: pointer;
+}
+
+.nav-section {
+  padding: 15px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.nav-section h3 {
+  padding: 0 20px;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #7f8c8d;
+  margin-bottom: 10px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  padding: 12px 20px;
+  color: #ecf0f1;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.nav-item:hover {
+  background: #34495e;
+  padding-left: 25px;
+}
+
+.nav-item.active {
+  background: #3498db;
+  border-left: 3px solid #ecf0f1;
+}
+
+.nav-item i {
+  margin-right: 10px;
+  font-size: 1.1rem;
+}
+
+.badge {
+  margin-left: auto;
+  background: #e74c3c;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.7rem;
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  padding: 15px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid rgba(255,255,255,0.1);
+}
+
+.user-profile {
+  display: flex;
+  align-items: center;
+}
+
+.user-profile img {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  margin-right: 10px;
+}
+
+.settings-btn {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 1.2rem;
+  cursor: pointer;
+}
+
+
+@media (max-width: 768px) {
+  .sidebar {
+    width: 70px;
+    overflow: hidden;
+  }
+  .sidebar-header h2, 
+  .nav-section h3,
+  .nav-item span,
+  .user-profile span {
+    display: none;
+  }
+  .nav-item {
+    justify-content: center;
+    padding: 15px 0;
+  }
+  .nav-item i {
+    margin-right: 0;
+    font-size: 1.3rem;
+  }
+}
+
+.nav-item {
+  transform: translateX(0);
+  transition: transform 0.3s, padding 0.3s;
+}
+.nav-item:hover {
+  transform: translateX(5px);
+}
+
+.sidebar-nav {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #3498db #2c3e50;
+}
+
+.sidebar-nav::-webkit-scrollbar {
+  width: 5px;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb {
+  background: #3498db;
+}
+
+
+
+
+button {
+  position: relative;
+  display: inline-block;
+  cursor: pointer;
+  outline: none;
+  border: 0;
+  vertical-align: middle;
+  text-decoration: none;
+  background: transparent;
+  padding: 0;
+  font-size: inherit;
+  font-family: inherit;
+}
+
+button.learn-more {
+  width: 12rem;
+  height: auto;
+}
+
+button.learn-more .circle {
+  transition: all 0.45s cubic-bezier(0.65, 0, 0.076, 1);
+  position: relative;
+  display: block;
+  margin: 0;
+  width: 3rem;
+  height: 3rem;
+    background: #84cc16;
+  border-radius: 1.625rem;
+}
+
+button.learn-more .circle .icon {
+  transition: all 0.45s cubic-bezier(0.65, 0, 0.076, 1);
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  margin: auto;
+  background: #fff;
+}
+
+button.learn-more .circle .icon.arrow {
+  transition: all 0.45s cubic-bezier(0.65, 0, 0.076, 1);
+  left: 0.625rem;
+  width: 1.125rem;
+  height: 0.125rem;
+  background: none;
+}
+
+button.learn-more .circle .icon.arrow::before {
+  position: absolute;
+  content: "";
+  top: -0.29rem;
+  right: 0.0625rem;
+  width: 0.625rem;
+  height: 0.625rem;
+  border-top: 0.125rem solid #fff;
+  border-right: 0.125rem solid #fff;
+  transform: rotate(45deg);
+}
+
+button.learn-more .button-text {
+  transition: all 0.45s cubic-bezier(0.65, 0, 0.076, 1);
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 0.75rem 0;
+  margin: 0 0 0 1.85rem;
+  color: #166534;
+  font-weight: 700;
+  line-height: 1.6;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+button:hover .circle {
+  width: 100%;
+  background: linear-gradient(to right, #84cc16, #71f916);
+}
+
+button:hover .circle .icon.arrow {
+  background: #fff;
+  transform: translate(1rem, 0);
+}
+
+button:hover .button-text {
+  color: #fff;
+}
+
+
+/* Hide the built-in password reveal button (Edge/IE/Chrome) */
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear,
+input[type="password"]::-webkit-credentials-auto-fill-button,
+input[type="password"]::-webkit-inner-spin-button {
+  display: none !important;
+}
