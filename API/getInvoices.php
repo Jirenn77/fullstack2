@@ -20,109 +20,110 @@ try {
         exit;
     }
 
-    // ✅ Handle invoice creation
-    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-        $data = json_decode(file_get_contents("php://input"), true);
+    // ✅ Handle invoice fetching (GET)
+    if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+        $branchFilter = $_GET['branch'] ?? null;
 
-        $invoiceNumber = $data['invoice_number'];
-        $customerId = $data['customer_id'];
-        $serviceId = $data['service_id'];
-        $totalPrice = $data['total_price'];
-        $status = $data['status'];
+        // First, let's use a simpler query to see what tables and data we have
+        $query = "
+        SELECT 
+            i.invoice_number,
+            i.invoice_date,
+            i.total_price,
+            i.status AS payment_status,
+            c.name AS customer_name,
+            s.name AS service_name,
+            s.price AS service_unit_price,
+            t.total_amount AS final_total,
+            t.employee_name,
+            t.branch_name AS branch
+        FROM invoices i
+        JOIN customers c ON i.customer_id = c.id
+        JOIN services s ON i.service_id = s.service_id
+        LEFT JOIN transactions t ON i.invoice_number = t.invoice_number
+        WHERE 1=1
+        ";
 
-        $stmt = $pdo->prepare("
-    INSERT INTO invoices (invoice_number, customer_id, service_id, quantity, total_price, status, notes)
-    VALUES (:invoice_number, :customer_id, :service_id, :quantity, :total_price, :status, :notes)
-");
-        $stmt->execute([
-            ':invoice_number' => $invoiceNumber,
-            ':customer_id' => $customerId,
-            ':service_id' => $serviceId,
-            ':quantity' => $quantity,
-            ':total_price' => $totalPrice,
-            ':status' => $status,
-            ':notes' => $notes
-        ]);
-
-
-        echo json_encode(['success' => true, 'message' => 'Invoice added successfully']);
-        exit;
-    }
-
-// ✅ Handle invoice fetching (GET)
-if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-    $branchFilter = $_GET['branch'] ?? null;
-
-    // ✅ UPDATED QUERY: Select branch_name from transactions table
-    $query = "
-    SELECT 
-        i.invoice_number,
-        i.invoice_date,
-        i.total_price,
-        i.status AS payment_status,
-        c.name AS customer_name,
-        s.name AS service_name,
-        t.total_amount AS final_total,
-        t.employee_name,
-        t.branch_name AS branch  -- ✅ Add this line to get actual branch
-    FROM invoices i
-    JOIN customers c ON i.customer_id = c.id
-    JOIN services s ON i.service_id = s.service_id
-    JOIN transactions t ON i.invoice_number = t.invoice_number
-    ";
-
-    // optional filter by branch
-    if ($branchFilter && strtolower($branchFilter) !== 'all') {
-        $query .= " WHERE t.branch_name = :branch"; // ✅ Filter by actual branch_name
-    }
-
-    $query .= " ORDER BY i.invoice_date DESC, i.invoice_id DESC";
-
-    $stmt = $pdo->prepare($query);
-
-    if ($branchFilter && strtolower($branchFilter) !== 'all') {
-        $stmt->bindParam(':branch', $branchFilter);
-    }
-
-    $stmt->execute();
-    $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    $invoices = [];
-
-    foreach ($result as $row) {
-        $invNumber = $row['invoice_number'];
-
-        // check if invoice exists already
-        $index = array_search($invNumber, array_column($invoices, 'invoiceNumber'));
-
-        if ($index === false) {
-            $invoices[] = [
-                'invoiceNumber' => $invNumber,
-                'name' => $row['customer_name'],
-                'dateIssued' => $row['invoice_date'],
-                'totalAmount' => isset($row['final_total'])
-                    ? "₱" . number_format($row['final_total'], 2)
-                    : "₱" . number_format($row['total_price'], 2),
-                'paymentStatus' => $row['payment_status'],
-                'handledBy' => $row['employee_name'] ?? "Staff",
-                'branch' => $row['branch'] ?? "Main", // ✅ Use actual branch from database
-                'services' => []
-            ];
-            $index = array_key_last($invoices);
+        // optional filter by branch
+        if ($branchFilter && strtolower($branchFilter) !== 'all') {
+            $query .= " AND (t.branch_name = :branch OR :branch = 'Main')";
         }
 
-        $invoices[$index]['services'][] = [
-            'name' => $row['service_name'],
-            'price' => "₱" . number_format($row['total_price'], 2)
-        ];
+        $query .= " ORDER BY i.invoice_date DESC, i.invoice_id DESC";
+
+        $stmt = $pdo->prepare($query);
+
+        if ($branchFilter && strtolower($branchFilter) !== 'all') {
+            $stmt->bindParam(':branch', $branchFilter);
+        }
+
+        $stmt->execute();
+        $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        if (!$result) {
+            echo json_encode([]);
+            exit;
+        }
+
+        $invoices = [];
+
+        foreach ($result as $row) {
+            $invNumber = $row['invoice_number'];
+
+            // Check if invoice exists already
+            $index = null;
+            foreach ($invoices as $key => $inv) {
+                if ($inv['invoiceNumber'] === $invNumber) {
+                    $index = $key;
+                    break;
+                }
+            }
+
+            if ($index === null) {
+                $grandTotal = $row['final_total'] ?? $row['total_price'] ?? 0;
+                
+                $invoices[] = [
+                    'invoiceNumber' => $invNumber,
+                    'name' => $row['customer_name'],
+                    'dateIssued' => $row['invoice_date'],
+                    'totalAmount' => "₱" . number_format($grandTotal, 2),
+                    'paymentStatus' => $row['payment_status'],
+                    'handledBy' => $row['employee_name'] ?? "Staff",
+                    'branch' => $row['branch'] ?? "Main",
+                    'grandTotal' => $grandTotal,
+                    'services' => []
+                ];
+                $index = count($invoices) - 1;
+            }
+
+            $serviceUnitPrice = $row['service_unit_price'] ?? $row['total_price'] ?? 0;
+
+            $invoices[$index]['services'][] = [
+                'name' => $row['service_name'],
+                'price' => $serviceUnitPrice,
+                'quantity' => 1, // Default to 1 if not available
+                'total' => $serviceUnitPrice
+            ];
+        }
+
+        // Calculate subtotal and total discount for each invoice
+        foreach ($invoices as &$invoice) {
+            $invoice['subtotal'] = array_sum(array_column($invoice['services'], 'total'));
+            $invoice['totalDiscount'] = max(0, $invoice['subtotal'] - $invoice['grandTotal']);
+            
+            // Set default values for other fields
+            $invoice['discountAmount'] = 0;
+            $invoice['promoDiscount'] = 0;
+            $invoice['membershipDiscount'] = 0;
+            $invoice['membershipBalanceDeduction'] = 0;
+        }
+
+        echo json_encode($invoices);
+        exit;
     }
-
-    echo json_encode($invoices);
-    exit;
-}
-
 
 } catch (PDOException $e) {
     http_response_code(500);
     echo json_encode(['error' => 'Database error: ' . $e->getMessage()]);
+    error_log("Database error in getInvoices.php: " . $e->getMessage());
 }
