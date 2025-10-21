@@ -1645,156 +1645,206 @@ export default function InvoicesPage() {
                   </div>
 
                   {/* Invoice Detail Panel */}
-                  <AnimatePresence>
-                    {selectedInvoice && (
-                      <motion.div
-                        key={`detail-${selectedInvoice.invoiceNumber}`}
-                        className="lg:w-1/3"
-                        initial={{ opacity: 0, x: 50 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: 50 }}
-                        transition={{ duration: 0.3 }}
-                      >
-                        <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6 sticky top-4">
-                          <div className="flex justify-between items-center mb-6">
-                            <div>
-                              <h2 className="text-xl font-bold text-gray-800">
-                                Invoice #{selectedInvoice.invoiceNumber}
-                              </h2>
-                              <p className="text-sm text-gray-500">
-                                {new Date(
-                                  selectedInvoice.dateIssued
-                                ).toLocaleString("en-US", {
-                                  year: "numeric",
-                                  month: "short",
-                                  day: "numeric",
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                })}
-                              </p>
-                            </div>
-                            <button
-                              onClick={() => setSelectedInvoice(null)}
-                              className="text-gray-500 hover:text-gray-700"
-                            >
-                              <X size={20} />
-                            </button>
-                          </div>
+<AnimatePresence>
+  {selectedInvoice && (
+    <motion.div
+      key={`detail-${selectedInvoice.invoiceNumber}`}
+      className="lg:w-1/3"
+      initial={{ opacity: 0, x: 50 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: 50 }}
+      transition={{ duration: 0.3 }}
+    >
+      <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6 sticky top-4">
+        <div className="flex justify-between items-center mb-6">
+          <div>
+            <h2 className="text-xl font-bold text-gray-800">
+              Invoice #{selectedInvoice.invoiceNumber}
+            </h2>
+            <p className="text-sm text-gray-500">
+              {new Date(selectedInvoice.dateIssued).toLocaleString("en-US", {
+                year: "numeric",
+                month: "short",
+                day: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </p>
+          </div>
+          <button
+            onClick={() => setSelectedInvoice(null)}
+            className="text-gray-500 hover:text-gray-700"
+          >
+            <X size={20} />
+          </button>
+        </div>
 
-                          <div className="space-y-6">
-                            <div className="grid grid-cols-2 gap-4">
-                              <div>
-                                <h3 className="text-sm font-medium text-gray-500 mb-1">
-                                  Customer
-                                </h3>
-                                <p className="text-gray-900 font-medium">
-                                  {selectedInvoice.name}
-                                </p>
-                              </div>
-                              <div>
-                                <h3 className="text-sm font-medium text-gray-500 mb-1">
-                                  Status
-                                </h3>
-                                <span
-                                  className={`px-3 py-1 text-xs rounded-full font-medium ${selectedInvoice.paymentStatus === "Paid"
-                                      ? "bg-green-100 text-green-800"
-                                      : "bg-yellow-100 text-yellow-800"
-                                    }`}
-                                >
-                                  {selectedInvoice.paymentStatus}
-                                </span>
-                              </div>
-                            </div>
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <h3 className="text-sm font-medium text-gray-500 mb-1">
+                Customer
+              </h3>
+              <p className="text-gray-900 font-medium">
+                {selectedInvoice.name}
+              </p>
+            </div>
+            <div>
+              <h3 className="text-sm font-medium text-gray-500 mb-1">
+                Status
+              </h3>
+              <span
+                className={`px-3 py-1 text-xs rounded-full font-medium ${
+                  selectedInvoice.paymentStatus === "Paid"
+                    ? "bg-green-100 text-green-800"
+                    : "bg-yellow-100 text-yellow-800"
+                }`}
+              >
+                {selectedInvoice.paymentStatus}
+              </span>
+            </div>
+          </div>
 
-                            <div className="grid grid-cols-2 gap-4">
-                              <div>
-                                <h3 className="text-sm font-medium text-gray-500 mb-1">
-                                  Branch
-                                </h3>
-                                <p className="text-gray-900">
-                                  {selectedInvoice.branch || "Main"}
-                                </p>
-                              </div>
-                              <div>
-                                <h3 className="text-sm font-medium text-gray-500 mb-1">
-                                  Handled By
-                                </h3>
-                                <p className="text-gray-900">
-                                  {selectedInvoice.handledBy || "Staff"}
-                                </p>
-                              </div>
-                            </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <h3 className="text-sm font-medium text-gray-500 mb-1">
+                Branch
+              </h3>
+              <p className="text-gray-900">
+                {selectedInvoice.branch || "Main"}
+              </p>
+            </div>
+            <div>
+              <h3 className="text-sm font-medium text-gray-500 mb-1">
+                Handled By
+              </h3>
+              <p className="text-gray-900">
+                {selectedInvoice.handledBy || "Staff"}
+              </p>
+            </div>
+          </div>
 
-                            <div className="border-t border-gray-200 pt-4">
-                              <h3 className="text-sm font-medium text-gray-500 mb-3">
-                                Services
-                              </h3>
-                              <div className="space-y-3">
-                                {selectedInvoice.services.map(
-                                  (service, index) => (
-                                    <div
-                                      key={`service-${selectedInvoice.invoiceNumber}-${index}`}
-                                      className="flex justify-between items-center py-2 border-b border-gray-100 last:border-0"
-                                    >
-                                      <div>
-                                        <p className="text-gray-800 font-medium">
-                                          {service.name}
-                                        </p>
-                                      </div>
-                                      <p className="text-gray-900 font-medium">
-                                        {service.price}
-                                      </p>
-                                    </div>
-                                  )
-                                )}
-                              </div>
-                            </div>
+          <div className="border-t border-gray-200 pt-4">
+            <h3 className="text-sm font-medium text-gray-500 mb-3">
+              Services
+            </h3>
+            <div className="space-y-3">
+              {selectedInvoice.services.map((service, index) => {
+                // Calculate service values
+                const servicePrice = typeof service.price === 'string' 
+                  ? parseFloat(service.price.replace(/[₱,]/g, '')) 
+                  : service.price || 0;
+                const serviceQuantity = service.quantity || 1;
+                const serviceTotal = servicePrice * serviceQuantity;
+                
+                return (
+                  <div
+                    key={`service-${selectedInvoice.invoiceNumber}-${index}`}
+                    className="flex justify-between items-start py-2 border-b border-gray-100 last:border-0"
+                  >
+                    <div className="flex-1">
+                      <p className="text-gray-800 font-medium">
+                        {service.name}
+                      </p>
+                      <p className="text-sm text-gray-500 mt-1">
+                        Qty: {serviceQuantity} × {formatCurrency(servicePrice)}
+                      </p>
+                    </div>
+                    <p className="text-gray-900 font-medium tabular-nums">
+                      {formatCurrency(serviceTotal)}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
 
-                            <div className="bg-gray-50 p-4 rounded-lg">
-                              <div className="flex justify-between items-center">
-                                <h3 className="text-lg font-bold text-gray-800">
-                                  Total Amount
-                                </h3>
-                                <p className="text-xl font-bold text-emerald-600">
-                                  {selectedInvoice.totalAmount}
-                                </p>
-                              </div>
-                            </div>
+          {/* Totals Section - Calculate dynamically */}
+          <div className="border-t border-gray-200 pt-4 space-y-3 text-sm">
+            {(() => {
+              // Calculate subtotal from services
+              const subtotal = selectedInvoice.services.reduce((sum, service) => {
+                const servicePrice = typeof service.price === 'string' 
+                  ? parseFloat(service.price.replace(/[₱,]/g, '')) 
+                  : service.price || 0;
+                const serviceQuantity = service.quantity || 1;
+                return sum + (servicePrice * serviceQuantity);
+              }, 0);
 
-                            <div className="flex space-x-3 pt-2">
-                              <motion.button
-                                onClick={() =>
-                                  handlePrintInvoice(selectedInvoice)
-                                }
-                                className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg text-sm font-medium flex items-center justify-center"
-                                whileHover={{ scale: 1.02 }}
-                                whileTap={{ scale: 0.98 }}
-                              >
-                                <Printer className="mr-2" size={16} />
-                                Print Invoice
-                              </motion.button>
-                              {selectedInvoice.paymentStatus === "Pending" && (
-                                <motion.button
-                                  onClick={() =>
-                                    handlePaymentStatusUpdate(
-                                      selectedInvoice.invoiceNumber,
-                                      "Paid"
-                                    )
-                                  }
-                                  className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium flex items-center justify-center"
-                                  whileHover={{ scale: 1.02 }}
-                                  whileTap={{ scale: 0.98 }}
-                                >
-                                  <Check className="mr-2" size={16} />
-                                  Mark as Paid
-                                </motion.button>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+              // For now, we'll show just the subtotal and total since we don't have breakdown data
+              // You can modify your backend to include these fields like in service acquire
+              const totalAmount = typeof selectedInvoice.totalAmount === 'string'
+                ? parseFloat(selectedInvoice.totalAmount.replace(/[₱,]/g, ''))
+                : selectedInvoice.totalAmount || 0;
+
+              const totalDiscount = subtotal - totalAmount;
+
+              return (
+                <>
+                  {/* Subtotal */}
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Subtotal:</span>
+                    <span className="tabular-nums text-gray-800">
+                      {formatCurrency(subtotal)}
+                    </span>
+                  </div>
+
+                  {/* Show discount if any */}
+                  {totalDiscount > 0 && (
+                    <div className="flex justify-between text-blue-600">
+                      <span>Total Discount:</span>
+                      <span className="tabular-nums">
+                        -{formatCurrency(totalDiscount)}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Total */}
+                  <div className="border-t pt-3 mt-3">
+                    <div className="flex justify-between font-bold text-base">
+                      <span className="text-gray-800">TOTAL:</span>
+                      <span className="tabular-nums text-emerald-600">
+                        {formatCurrency(totalAmount)}
+                      </span>
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+
+          <div className="flex space-x-3 pt-2">
+            <motion.button
+              onClick={() => handlePrintInvoice(selectedInvoice)}
+              className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg text-sm font-medium flex items-center justify-center"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              <Printer className="mr-2" size={16} />
+              Print Invoice
+            </motion.button>
+            {selectedInvoice.paymentStatus === "Pending" && (
+              <motion.button
+                onClick={() =>
+                  handlePaymentStatusUpdate(
+                    selectedInvoice.invoiceNumber,
+                    "Paid"
+                  )
+                }
+                className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium flex items-center justify-center"
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                <Check className="mr-2" size={16} />
+                Mark as Paid
+              </motion.button>
+            )}
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  )}
+</AnimatePresence>
                 </div>
               )}
             </motion.div>

@@ -144,34 +144,35 @@ export default function CustomersPage() {
 }, []);
 
   // Helper function to check if customer should show new member badge
-  const shouldShowNewMemberBadge = (customer) => {
-    try {
-      const stored = localStorage.getItem(`newMember:${customer.id}`);
-      if (!stored) return false;
+  // Helper function to check if customer should show new member badge
+const shouldShowNewMemberBadge = (customer) => {
+  try {
+    const stored = localStorage.getItem(`newMember:${customer.id}`);
+    if (!stored) return false;
 
-      const parsed = JSON.parse(stored);
-      const storedMembershipId = parsed?.membershipId;
-      const currentMembershipId = customer.membership_id;
+    const parsed = JSON.parse(stored);
+    const storedMembershipId = parsed?.membershipId;
+    const currentMembershipId = customer.membership_id;
 
-      // Only remove the badge if membership has been renewed (different membership ID)
-      if (
-        storedMembershipId &&
-        currentMembershipId &&
-        storedMembershipId !== currentMembershipId &&
-        currentMembershipId !== null &&
-        currentMembershipId !== undefined
-      ) {
-        // Membership renewed - remove flag and don't show badge
-        localStorage.removeItem(`newMember:${customer.id}`);
-        return false;
-      }
-
-      // Show badge if flag exists and hasn't been renewed
-      return true;
-    } catch (_) {
+    // Only remove the badge if membership has been renewed (different membership ID)
+    if (
+      storedMembershipId &&
+      currentMembershipId &&
+      storedMembershipId !== currentMembershipId &&
+      currentMembershipId !== null &&
+      currentMembershipId !== undefined
+    ) {
+      // Membership renewed - remove flag and don't show badge
+      localStorage.removeItem(`newMember:${customer.id}`);
       return false;
     }
-  };
+
+    // Show badge if flag exists and hasn't been renewed
+    return true;
+  } catch (_) {
+    return false;
+  }
+};
 
   // Membership-related states
   const [isMembershipModalOpen, setIsMembershipModalOpen] = useState(false);
@@ -221,75 +222,101 @@ export default function CustomersPage() {
   }, [activeTab]);
 
   const fetchCustomers = async (filter = "all") => {
-    try {
-      setIsLoading(true);
-      const response = await fetch(
-        `http://localhost/API/customers.php?filter=${filter}`
-      );
-      if (!response.ok) throw new Error("Failed to fetch customers");
-      const data = await response.json();
+  try {
+    setIsLoading(true);
+    const response = await fetch(
+      `http://localhost/API/customers.php?filter=${filter}`
+    );
+    if (!response.ok) throw new Error("Failed to fetch customers");
+    const data = await response.json();
 
-      // Decorate with persisted "new member" flags using helper function
-      const decorated = Array.isArray(data)
-        ? data.map((c) => {
-            const shouldShowBadge = shouldShowNewMemberBadge(c);
-            if (!shouldShowBadge) return c;
+    // Decorate with persisted "new member" flags and check for expired memberships
+    const decorated = Array.isArray(data)
+      ? data.map((c) => {
+          const shouldShowBadge = shouldShowNewMemberBadge(c);
+          
+          // Check if membership is expired
+          let isExpired = false;
+          if (c.membershipDetails?.expire_date || c.membershipDetails?.expireDate) {
+            const expireDate = new Date(c.membershipDetails.expire_date || c.membershipDetails.expireDate);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            expireDate.setHours(0, 0, 0, 0);
+            isExpired = expireDate < today;
+          }
 
-            // Get stored data for badge type
-            try {
-              const stored = localStorage.getItem(`newMember:${c.id}`);
-              const parsed = JSON.parse(stored);
+          if (!shouldShowBadge && !isExpired) return { ...c, isExpired };
 
-              return {
-                ...c,
-                isNewMember: true,
-                newMemberType:
-                  parsed?.type ||
+          try {
+            const stored = localStorage.getItem(`newMember:${c.id}`);
+            const parsed = JSON.parse(stored);
+
+            return {
+              ...c,
+              isNewMember: shouldShowBadge,
+              isExpired: isExpired,
+              newMemberType: shouldShowBadge
+                ? parsed?.type ||
                   (c.membership_status
                     ? String(c.membership_status).toLowerCase()
-                    : undefined),
-              };
-            } catch (_) {
-              return c;
-            }
-          })
-        : data;
+                    : undefined)
+                : undefined,
+            };
+          } catch (_) {
+            return { ...c, isExpired };
+          }
+        })
+      : data;
 
-      setCustomers(decorated);
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    setCustomers(decorated);
+  } catch (error) {
+    console.error(error);
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   const fetchCustomerDetails = async (customerId) => {
-    setIsLoadingDetails(true);
-    try {
-      const res = await fetch(
-        `http://localhost/API/customers.php?customerId=${customerId}`
-      );
-      const data = await res.json();
+  setIsLoadingDetails(true);
+  try {
+    const res = await fetch(
+      `http://localhost/API/customers.php?customerId=${customerId}`
+    );
+    const data = await res.json();
 
-      // Make sure to include all expected properties in the result
-      setSelectedCustomer({
-        id: data.id,
-        name: data.name,
-        contact: data.contact,
-        email: data.email,
-        address: data.address,
-        birthday: data.birthday,
-        customerId: data.customerId,
-        membership: data.membership || "None",
-        membershipDetails: data.membershipDetails || null,
-        transactions: data.transactions || [],
-      });
-    } catch (error) {
-      console.error("Error fetching customer details:", error);
-    } finally {
-      setIsLoadingDetails(false);
+    // Calculate isExpired for the individual customer
+    let isExpired = false;
+    if (data.membershipDetails?.expire_date || data.membershipDetails?.expireDate) {
+      const expireDate = new Date(data.membershipDetails.expire_date || data.membershipDetails.expireDate);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      expireDate.setHours(0, 0, 0, 0);
+      isExpired = expireDate < today;
     }
-  };
+
+    // Make sure to include all expected properties in the result
+    setSelectedCustomer({
+      id: data.id,
+      name: data.name,
+      contact: data.contact,
+      email: data.email,
+      address: data.address,
+      birthday: data.birthday,
+      customerId: data.customerId,
+      membership: data.membership || "None",
+      membershipDetails: data.membershipDetails || null,
+      transactions: data.transactions || [],
+      isExpired: isExpired, // Add the calculated isExpired property
+      // Also preserve any existing new member flags from the local state
+      isNewMember: customers.find(c => c.id === customerId)?.isNewMember || false,
+      newMemberType: customers.find(c => c.id === customerId)?.newMemberType,
+    });
+  } catch (error) {
+    console.error("Error fetching customer details:", error);
+  } finally {
+    setIsLoadingDetails(false);
+  }
+};
 
   const fetchMembershipLogs = async (filter = "all") => {
     setLogsLoading(true);
@@ -1430,35 +1457,38 @@ export default function CustomersPage() {
                             whileHover={{ y: -2, backgroundColor: "#f9fafb" }}
                           >
                             {/* Customer Column */}
-                            <td className="px-4 py-3 md:px-6 md:py-4 whitespace-nowrap">
-                              <div className="flex items-center">
-                                <div className="ml-3 md:ml-4">
-                                  <div className="text-sm font-medium text-gray-900 flex items-center">
-                                    {customer.name}
-                                    {customer.isNewMember ? (
-                                      <span className="ml-2 bg-gradient-to-r from-amber-100 to-yellow-100 text-amber-800 text-xs px-2 py-1 rounded-full border border-amber-300 font-semibold shadow-sm animate-pulse">
-                                        ✨ New{" "}
-                                        {customer.newMemberType
-                                          ? customer.newMemberType
-                                              .charAt(0)
-                                              .toUpperCase() +
-                                            customer.newMemberType.slice(1)
-                                          : ""}{" "}
-                                        Member
-                                      </span>
-                                    ) : (
-                                      customer.membership_status &&
-                                      customer.membership_status.toLowerCase() !==
-                                        "none" && (
-                                        <span className="ml-2 bg-blue-100 text-blue-800 text-xs px-1.5 py-0.5 rounded-full">
-                                          Member
-                                        </span>
-                                      )
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                            </td>
+<td className="px-4 py-3 md:px-6 md:py-4 whitespace-nowrap">
+  <div className="flex items-center">
+    <div className="ml-3 md:ml-4">
+      <div className="text-sm font-medium text-gray-900 flex items-center">
+        {customer.name}
+        {customer.isExpired ? (
+          <span className="ml-2 bg-gradient-to-r from-red-100 to-red-50 text-red-800 text-xs px-2 py-1 rounded-full border border-red-300 font-semibold shadow-sm">
+            ⚠️ Expired
+          </span>
+        ) : customer.isNewMember ? (
+          <span className="ml-2 bg-gradient-to-r from-amber-100 to-yellow-100 text-amber-800 text-xs px-2 py-1 rounded-full border border-amber-300 font-semibold shadow-sm animate-pulse">
+            ✨ New{" "}
+            {customer.newMemberType
+              ? customer.newMemberType
+                  .charAt(0)
+                  .toUpperCase() +
+                customer.newMemberType.slice(1)
+              : ""}{" "}
+            Member
+          </span>
+        ) : (
+          customer.membership_status &&
+          customer.membership_status.toLowerCase() !== "none" && (
+            <span className="ml-2 bg-blue-100 text-blue-800 text-xs px-1.5 py-0.5 rounded-full">
+              Member
+            </span>
+          )
+        )}
+      </div>
+    </div>
+  </div>
+</td>
 
                             {/* Contact Column */}
                             <td className="px-4 py-3 md:px-6 md:py-4 whitespace-nowrap">
@@ -1471,118 +1501,141 @@ export default function CustomersPage() {
                             </td>
 
                             {/* Membership Column */}
-                            <td className="px-4 py-3 md:px-6 md:py-4 whitespace-nowrap">
-                              <div className="flex flex-col">
-                                {(() => {
-                                  const rawStatus = customer.membership_status;
-                                  const type =
-                                    rawStatus &&
-                                    rawStatus.trim().toLowerCase() !== "none"
-                                      ? rawStatus.trim().toLowerCase()
-                                      : null;
+<td className="px-4 py-3 md:px-6 md:py-4 whitespace-nowrap">
+  <div className="flex flex-col">
+    {(() => {
+      const rawStatus = customer.membership_status;
+      const type =
+        rawStatus &&
+        rawStatus.trim().toLowerCase() !== "none"
+          ? rawStatus.trim().toLowerCase()
+          : null;
 
-                                  let badgeClass = "bg-gray-200 text-gray-800";
-                                  if (type === "pro")
-                                    badgeClass =
-                                      "bg-gradient-to-r from-purple-200 to-purple-100 text-purple-800 border border-purple-200";
-                                  else if (type === "basic")
-                                    badgeClass =
-                                      "bg-gradient-to-r from-blue-200 to-blue-100 text-blue-800 border border-blue-200";
-                                  else if (type === "promo")
-                                    badgeClass =
-                                      "bg-gradient-to-r from-amber-200 to-amber-100 text-amber-800 border border-amber-200";
+      let badgeClass = "bg-gray-200 text-gray-800";
+      if (customer.isExpired) {
+        badgeClass = "bg-red-100 text-red-800 border border-red-200";
+      } else if (type === "pro") {
+        badgeClass = "bg-gradient-to-r from-purple-200 to-purple-100 text-purple-800 border border-purple-200";
+      } else if (type === "basic") {
+        badgeClass = "bg-gradient-to-r from-blue-200 to-blue-100 text-blue-800 border border-blue-200";
+      } else if (type === "promo") {
+        badgeClass = "bg-gradient-to-r from-amber-200 to-amber-100 text-amber-800 border border-amber-200";
+      }
 
-                                  return (
-                                    <>
-                                      <span
-                                        className={`inline-flex items-center px-2 py-0.5 md:px-3 md:py-1 rounded-full text-xs font-medium ${badgeClass}`}
-                                      >
-                                        {type
-                                          ? type.charAt(0).toUpperCase() +
-                                            type.slice(1)
-                                          : "Non-Member"}
-                                      </span>
-                                      {customer.membershipDetails && (
-                                        <div className="mt-1 text-xs text-gray-500 space-y-1">
-                                          <div>
-                                            Balance: ₱
-                                            {Number(
-                                              customer.membershipDetails
-                                                .remainingBalance
-                                            ).toLocaleString("en-PH", {
-                                              minimumFractionDigits: 2,
-                                              maximumFractionDigits: 2,
-                                            })}
-                                          </div>
-                                        </div>
-                                      )}
-                                    </>
-                                  );
-                                })()}
-                              </div>
-                            </td>
+      return (
+        <>
+          <span
+            className={`inline-flex items-center px-2 py-0.5 md:px-3 md:py-1 rounded-full text-xs font-medium ${badgeClass}`}
+          >
+            {customer.isExpired 
+              ? "Expired Member" 
+              : type
+                ? type.charAt(0).toUpperCase() + type.slice(1)
+                : "Non-Member"
+            }
+          </span>
+          {customer.membershipDetails && (
+            <div className="mt-1 text-xs text-gray-500 space-y-1">
+              <div>
+                Balance: ₱
+                {Number(
+                  customer.membershipDetails.remainingBalance
+                ).toLocaleString("en-PH", {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+              </div>
+              {customer.membershipDetails.expire_date && (
+                <div className={customer.isExpired ? "text-red-600 font-medium" : "text-gray-600"}>
+                  {customer.isExpired ? "Expired: " : "Expires: "}
+                  {new Date(customer.membershipDetails.expire_date).toLocaleDateString()}
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      );
+    })()}
+  </div>
+</td>
 
-                            {/* Actions Column */}
-                            <td className="px-4 py-3 md:px-6 md:py-4 whitespace-nowrap text-sm text-gray-500">
-                              <div className="flex space-x-2 md:space-x-3">
-                                {customer.membership_status === "None" ? (
-                                  // Add Membership
-                                  <motion.button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleAddMembershipClick(customer);
-                                    }}
-                                    className="text-blue-600 hover:text-blue-800 p-1 rounded-md hover:bg-blue-100 transition-colors"
-                                    whileHover={{ scale: 1.2 }}
-                                    whileTap={{ scale: 0.9 }}
-                                    title="Add Membership"
-                                  >
-                                    <UserPlus size={14} />
-                                  </motion.button>
-                                ) : (
-                                  <motion.button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      // Set the customer first, then open modal
-                                      setSelectedCustomer(customer);
-                                      handleRenewMembershipClick(customer);
-                                      setIsRenewModalOpen(true);
-                                    }}
-                                    className="text-green-600 hover:text-green-800 p-1 rounded-md hover:bg-green-100 transition-colors"
-                                    whileHover={{ scale: 1.2 }}
-                                    whileTap={{ scale: 0.9 }}
-                                    title="Renew Membership"
-                                  >
-                                    <RefreshCw size={14} />
-                                  </motion.button>
-                                )}
-                                <motion.button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleEditClick(customer);
-                                  }}
-                                  className="text-gray-600 hover:text-gray-800 p-1 rounded-md hover:bg-gray-100 transition-colors"
-                                  whileHover={{ scale: 1.2 }}
-                                  whileTap={{ scale: 0.9 }}
-                                  title="Edit"
-                                >
-                                  <Edit size={14} />
-                                </motion.button>
-                                <motion.button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSelectedCustomer(customer);
-                                    fetchCustomerDetails(customer.id);
-                                  }}
-                                  className="text-purple-600 hover:text-purple-800 p-1 rounded-md hover:bg-purple-100 transition-colors"
-                                  whileHover={{ scale: 1.2 }}
-                                  whileTap={{ scale: 0.9 }}
-                                  title="View Details"
-                                >
-                                  <Eye size={14} />
-                                </motion.button>
-                              </div>
-                            </td>
+                           {/* Actions Column */}
+<td className="px-4 py-3 md:px-6 md:py-4 whitespace-nowrap text-sm text-gray-500">
+  <div className="flex space-x-2 md:space-x-3">
+    {customer.membership_status === "None" ? (
+      // Add Membership for non-members
+      <motion.button
+        onClick={(e) => {
+          e.stopPropagation();
+          handleAddMembershipClick(customer);
+        }}
+        className="text-blue-600 hover:text-blue-800 p-1 rounded-md hover:bg-blue-100 transition-colors"
+        whileHover={{ scale: 1.2 }}
+        whileTap={{ scale: 0.9 }}
+        title="Add Membership"
+      >
+        <UserPlus size={14} />
+      </motion.button>
+    ) : customer.isExpired ? (
+      // Renew for expired members
+      <motion.button
+        onClick={(e) => {
+          e.stopPropagation();
+          setSelectedCustomer(customer);
+          handleRenewMembershipClick(customer);
+          setIsRenewModalOpen(true);
+        }}
+        className="text-red-600 hover:text-red-800 p-1 rounded-md hover:bg-red-100 transition-colors"
+        whileHover={{ scale: 1.2 }}
+        whileTap={{ scale: 0.9 }}
+        title="Renew Expired Membership"
+      >
+        <RefreshCw size={14} />
+      </motion.button>
+    ) : (
+      // Renew for active members
+      <motion.button
+        onClick={(e) => {
+          e.stopPropagation();
+          setSelectedCustomer(customer);
+          handleRenewMembershipClick(customer);
+          setIsRenewModalOpen(true);
+        }}
+        className="text-green-600 hover:text-green-800 p-1 rounded-md hover:bg-green-100 transition-colors"
+        whileHover={{ scale: 1.2 }}
+        whileTap={{ scale: 0.9 }}
+        title="Renew Membership"
+      >
+        <RefreshCw size={14} />
+      </motion.button>
+    )}
+    <motion.button
+      onClick={(e) => {
+        e.stopPropagation();
+        handleEditClick(customer);
+      }}
+      className="text-gray-600 hover:text-gray-800 p-1 rounded-md hover:bg-gray-100 transition-colors"
+      whileHover={{ scale: 1.2 }}
+      whileTap={{ scale: 0.9 }}
+      title="Edit"
+    >
+      <Edit size={14} />
+    </motion.button>
+    <motion.button
+      onClick={(e) => {
+        e.stopPropagation();
+        setSelectedCustomer(customer);
+        fetchCustomerDetails(customer.id);
+      }}
+      className="text-purple-600 hover:text-purple-800 p-1 rounded-md hover:bg-purple-100 transition-colors"
+      whileHover={{ scale: 1.2 }}
+      whileTap={{ scale: 0.9 }}
+      title="View Details"
+    >
+      <Eye size={14} />
+    </motion.button>
+  </div>
+</td>
                           </motion.tr>
                         ))}
                       </AnimatePresence>
@@ -1785,94 +1838,104 @@ export default function CustomersPage() {
                     </div>
 
                     {/* Membership Status */}
-                    <div>
-                      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 flex items-center">
-                        <Star className="mr-2" size={14} />
-                        Membership Status
-                      </h3>
-                      <div
-                        className={`p-3 rounded-lg ${
-                          selectedCustomer.membership?.toLowerCase() === "pro"
-                            ? "bg-purple-100 border border-purple-200"
-                            : selectedCustomer.membership?.toLowerCase() ===
-                                "basic"
-                              ? "bg-blue-100 border border-blue-200"
-                              : selectedCustomer.membership?.toLowerCase() ===
-                                  "promo"
-                                ? "bg-amber-100 border border-amber-200"
-                                : "bg-gray-100 border border-gray-200"
-                        }`}
-                      >
-                        <div className="flex justify-between items-center mb-2">
-                          <span className="font-medium text-sm">
-                            {selectedCustomer.membership?.toLowerCase() ===
-                            "pro"
-                              ? "PRO Member"
-                              : selectedCustomer.membership?.toLowerCase() ===
-                                  "basic"
-                                ? "Basic Member"
-                                : selectedCustomer.membership?.toLowerCase() ===
-                                    "promo"
-                                  ? "Membership Promo"
-                                  : "No Membership"}
-                          </span>
-                          {selectedCustomer.membership !== "None" && (
-                            <span className="text-xs text-gray-500">
-                              {selectedCustomer.membershipDetails?.expireDate}
-                            </span>
-                          )}
-                        </div>
+<div>
+  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 flex items-center">
+    <Star className="mr-2" size={14} />
+    Membership Status
+  </h3>
+  <div
+    className={`p-3 rounded-lg ${
+      selectedCustomer.isExpired
+        ? "bg-red-100 border border-red-200"
+        : selectedCustomer.membership?.toLowerCase() === "pro"
+          ? "bg-purple-100 border border-purple-200"
+          : selectedCustomer.membership?.toLowerCase() === "basic"
+            ? "bg-blue-100 border border-blue-200"
+            : selectedCustomer.membership?.toLowerCase() === "promo"
+              ? "bg-amber-100 border border-amber-200"
+              : "bg-gray-100 border border-gray-200"
+    }`}
+  >
+    <div className="flex justify-between items-center mb-2">
+      <span className="font-medium text-sm">
+        {selectedCustomer.isExpired
+          ? "EXPIRED Member"
+          : selectedCustomer.membership?.toLowerCase() === "pro"
+            ? "PRO Member"
+            : selectedCustomer.membership?.toLowerCase() === "basic"
+              ? "Basic Member"
+              : selectedCustomer.membership?.toLowerCase() === "promo"
+                ? "Membership Promo"
+                : "No Membership"}
+      </span>
+      {selectedCustomer.membership !== "None" && selectedCustomer.membershipDetails?.expire_date && (
+        <span className={`text-xs ${selectedCustomer.isExpired ? 'text-red-600 font-medium' : 'text-gray-500'}`}>
+          {selectedCustomer.isExpired ? 'Expired: ' : 'Expires: '}
+          {new Date(selectedCustomer.membershipDetails.expire_date).toLocaleDateString()}
+        </span>
+      )}
+    </div>
 
-                        {selectedCustomer.membership !== "None" && (
-                          <div className="grid grid-cols-2 gap-2 text-xs">
-                            <div>
-                              <div className="text-gray-600">Coverage:</div>
-                              <div className="font-medium truncate">
-                                {selectedCustomer.membershipDetails?.coverage}
-                              </div>
-                            </div>
-                            <div>
-                              <div className="text-gray-600">Remaining:</div>
-                              <div className="font-medium text-green-700">
-                                ₱
-                                {
-                                  selectedCustomer.membershipDetails
-                                    ?.remainingBalance
-                                }
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
+    {selectedCustomer.membership !== "None" && (
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <div>
+          <div className="text-gray-600">Coverage:</div>
+          <div className="font-medium truncate">
+            {selectedCustomer.membershipDetails?.coverage}
+          </div>
+        </div>
+        <div>
+          <div className="text-gray-600">Remaining:</div>
+          <div className={`font-medium ${selectedCustomer.isExpired ? 'text-red-700' : 'text-green-700'}`}>
+            ₱
+            {
+              selectedCustomer.membershipDetails?.remainingBalance
+            }
+          </div>
+        </div>
+      </div>
+    )}
+  </div>
 
-                      <div className="mt-3">
-                        {selectedCustomer.membership === "None" ? (
-                          <motion.button
-                            onClick={() =>
-                              handleAddMembershipClick(selectedCustomer)
-                            }
-                            className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
-                            whileHover={{ scale: 1.02 }}
-                            whileTap={{ scale: 0.98 }}
-                          >
-                            Add Membership
-                          </motion.button>
-                        ) : (
-                          <motion.button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setIsRenewModalOpen(true);
-                              handleRenewMembershipClick(selectedCustomer);
-                            }}
-                            className="w-full py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors"
-                            whileHover={{ scale: 1.02 }}
-                            whileTap={{ scale: 0.98 }}
-                          >
-                            Renew Membership
-                          </motion.button>
-                        )}
-                      </div>
-                    </div>
+  <div className="mt-3">
+    {selectedCustomer.membership === "None" ? (
+      <motion.button
+        onClick={() => handleAddMembershipClick(selectedCustomer)}
+        className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
+        whileHover={{ scale: 1.02 }}
+        whileTap={{ scale: 0.98 }}
+      >
+        Add Membership
+      </motion.button>
+    ) : selectedCustomer.isExpired ? (
+      <motion.button
+        onClick={(e) => {
+          e.stopPropagation();
+          setIsRenewModalOpen(true);
+          handleRenewMembershipClick(selectedCustomer);
+        }}
+        className="w-full py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition-colors"
+        whileHover={{ scale: 1.02 }}
+        whileTap={{ scale: 0.98 }}
+      >
+        Renew Expired Membership
+      </motion.button>
+    ) : (
+      <motion.button
+        onClick={(e) => {
+          e.stopPropagation();
+          setIsRenewModalOpen(true);
+          handleRenewMembershipClick(selectedCustomer);
+        }}
+        className="w-full py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors"
+        whileHover={{ scale: 1.02 }}
+        whileTap={{ scale: 0.98 }}
+      >
+        Renew Membership
+      </motion.button>
+    )}
+  </div>
+</div>
 
                     {/* Recent Activity
                     <div>

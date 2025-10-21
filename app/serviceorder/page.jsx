@@ -135,7 +135,7 @@ export default function ServiceOrderPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [customers, setCustomers] = useState([]);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
-  const currentUser = { name: "Admin" };
+    const [currentUser, setCurrentUser] = useState(null);
   const [isCustomersLoading, setIsCustomersLoading] = useState(true);
   const [membershipTemplates, setMembershipTemplates] = useState([]);
   const [customersError, setCustomersError] = useState(null);
@@ -160,8 +160,7 @@ export default function ServiceOrderPage() {
   });
 
   // Membership upgrade states
-  const [isMembershipUpgradeModalOpen, setIsMembershipUpgradeModalOpen] =
-    useState(false);
+  const [isMembershipUpgradeModalOpen, setIsMembershipUpgradeModalOpen] = useState(false);
   const [upgradeMembershipForm, setUpgradeMembershipForm] = useState({
     type: "basic",
     name: "Basic",
@@ -228,9 +227,89 @@ export default function ServiceOrderPage() {
     }
   };
 
+const fetchCustomersWithMembership = async () => {
+  try {
+    setIsCustomersLoading(true);
+    
+    // Fetch customers
+    const customersRes = await fetch("http://localhost/API/customers.php");
+    if (!customersRes.ok) throw new Error("Failed to fetch customers");
+    const customersData = await customersRes.json();
+
+    // Fetch memberships
+    const membershipsRes = await fetch("http://localhost/API/members.php");
+    const membershipsData = await membershipsRes.json();
+    
+    console.log("Memberships data:", membershipsData);
+
+    const formatted = customersData.map((cust) => {
+      let newMember = false;
+      let isExpired = false;
+      let membershipBalance = 0;
+      let expirationDate = null;
+
+      // Find membership for this customer
+      const membership = membershipsData.find(m => m.customer_id == cust.id);
+      console.log(`Membership for customer ${cust.id}:`, membership);
+
+      if (membership) {
+        // Check expiration
+        if (membership.expire_date) {
+          const expire = new Date(membership.expire_date);
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          expire.setHours(0, 0, 0, 0);
+          
+          isExpired = expire < today;
+          expirationDate = membership.expire_date;
+        }
+        
+        membershipBalance = membership.remaining_balance || 0;
+      }
+
+      try {
+        const stored = localStorage.getItem(`newMember:${cust.id}`);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          const createdAt = parsed?.createdAt ? new Date(parsed.createdAt) : null;
+          const now = new Date();
+          if (createdAt && now.getTime() - createdAt.getTime() < 24 * 60 * 60 * 1000) {
+            newMember = true;
+          } else {
+            localStorage.removeItem(`newMember:${cust.id}`);
+          }
+        }
+      } catch (_) {}
+
+      return {
+        id: cust.id,
+        name: cust.name,
+        membershipType: cust.membership_status,
+          isMember: cust.membership_status !== "None",
+        balance: membershipBalance,
+        isNewMember: newMember,
+        isExpired: isExpired,
+        expirationDate: expirationDate,
+      };
+    });
+
+    setCustomers(formatted);
+  } catch (err) {
+    console.error(err);
+    setCustomersError("Failed to load customers");
+  } finally {
+    setIsCustomersLoading(false);
+  }
+};
+
   useEffect(() => {
     fetchCustomers();
+    fetchCustomersWithMembership();
   }, []);
+
+  const today = new Date();
+console.log("Today's date:", today.toISOString().split('T')[0]);
+console.log("Testing expiration for 2025-10-15:", new Date('2025-10-15') < today);
 
   // Fetch services on component mount
   useEffect(() => {
@@ -482,8 +561,8 @@ export default function ServiceOrderPage() {
   );
 
   const premiumServiceIds = membershipServices.map((s) => s.id);
-
-  const premiumSubtotal = selectedServices
+  
+          const premiumSubtotal = selectedServices
     .filter(
       (service) =>
         premiumServiceIds.includes(service.id) &&
@@ -494,55 +573,43 @@ export default function ServiceOrderPage() {
 
   // Calculate membership eligibility
   const canUseDiscountServices =
-    isMember &&
-    useMembership &&
-    // Regular members can always use discounts
-    (!isNewMember ||
-      // New members can use discounts ONLY when balance is 0 or less
-      (isNewMember && membershipBalance <= 0));
+  isMember &&
+  useMembership &&
+  !selectedCustomer?.isExpired && // ✅ ADD: Expired members cannot use discounts
+  // Regular members can always use discounts
+  (!isNewMember ||
+    // New members can use discounts ONLY when balance is 0 or less
+    (isNewMember && membershipBalance <= 0));
 
   // Apply 50% discount only if eligible
   const membershipDiscountAmount = canUseDiscountServices
     ? premiumSubtotal * 0.5
     : 0;
 
-  const membershipBalanceDeduction =
-    isMember && useMembership && membershipBalance > 0
-      ? (() => {
-          const eligibleServicesTotal = selectedServices
-            .filter((s) => !s.isFromPromo && !s.isFromBundle)
-            .reduce((sum, s) => sum + s.price * (s.quantity || 1), 0);
+ const membershipBalanceDeduction = isMember && useMembership && membershipBalance > 0 && !selectedCustomer?.isExpired // ✅ ADD expiration check here only
+  ? (() => {
+      const eligibleServicesTotal = selectedServices
+        .filter((s) => !s.isFromPromo && !s.isFromBundle)
+        .reduce((sum, s) => sum + s.price * (s.quantity || 1), 0);
 
-          const totalBeforeDiscounts = selectedServices.reduce(
-            (sum, s) => sum + s.price * (s.quantity || 1),
-            0
-          );
+      const amountAfterMembershipDiscount =
+        !isNewMember && membershipDiscountAmount > 0
+          ? Math.max(eligibleServicesTotal - membershipDiscountAmount, 0)
+          : eligibleServicesTotal;
 
-          let eligibleAmount = eligibleServicesTotal;
+      return Math.min(membershipBalance, amountAfterMembershipDiscount);
+    })()
+  : 0;
 
-          if (totalBeforeDiscounts > 0) {
-            const eligibleProportion =
-              eligibleServicesTotal / totalBeforeDiscounts;
-            // ONLY exclude promo reductions from balance eligibility.
-            const proportionalPromoReduction =
-              (promoReduction || 0) * eligibleProportion;
-            eligibleAmount = Math.max(
-              eligibleServicesTotal - proportionalPromoReduction,
-              0
-            );
-          }
 
-          return Math.min(membershipBalance, eligibleAmount);
-        })()
-      : 0;
-
-  // Unified membership reduction for total calculation
-  const membershipReductionUsed =
-    isMember && useMembership
-      ? isNewMember
-        ? membershipBalanceDeduction // new members
-        : membershipDiscountAmount // existing members
-      : 0;
+// Unified membership reduction for total calculation
+// In the membership reduction calculation
+const membershipReductionUsed =
+  isMember && useMembership
+    ? isNewMember
+      ? membershipBalanceDeduction // new members
+      : membershipDiscountAmount // existing members
+    : 0;
 
   const updateQuantity = (serviceId, newQuantity) => {
     setSelectedServices((prev) =>
@@ -554,163 +621,162 @@ export default function ServiceOrderPage() {
     );
   };
 
+  const formatDate = (dateString) => {
+  if (!dateString) return 'No expiry';
+  const date = new Date(dateString);
+  return date.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric'
+  });
+};
+
   const confirmSave = async () => {
-    if (!selectedCustomer || selectedServices.length === 0) {
-      toast.warning("Please select a customer and at least one service.");
-      return;
+  if (!selectedCustomer || selectedServices.length === 0) {
+    toast.warning("Please select a customer and at least one service.");
+    return;
+  }
+
+  // Get current user data
+  const currentUserResponse = await fetch("http://localhost/API/branches.php?action=user", {
+    credentials: "include"
+  });
+  const currentUserData = await currentUserResponse.json();
+
+  console.log('Current User Data:', currentUserData); // Debug log
+
+  let appliedMembershipDiscount = 0;
+  let appliedMembershipBalance = 0;
+
+  if (isMember && useMembership) {
+    if (membershipBalanceDeduction > 0) {
+      appliedMembershipBalance = membershipBalanceDeduction;
+      appliedMembershipDiscount = 0;
+    } else {
+      appliedMembershipDiscount = membershipDiscountAmount || 0;
+      appliedMembershipBalance = 0;
     }
+  }
 
-    // Get current user data
-    const currentUserResponse = await fetch(
-      "http://localhost/API/branches.php?action=user",
-      {
-        credentials: "include",
-      }
-    );
-    const currentUserData = await currentUserResponse.json();
+  const servicesTotal = selectedServices.reduce(
+    (sum, service) => sum + service.price * (service.quantity || 1),
+    0
+  );
 
-    // ===== unified membership application (use the computed values above) =====
-    // membershipDiscountAmount and membershipBalanceDeduction are computed in component scope.
-    let appliedMembershipDiscount = 0;
-    let appliedMembershipBalance = 0;
+  const newBalance =
+    isMember && useMembership && appliedMembershipBalance > 0
+      ? Math.max(0, membershipBalance - appliedMembershipBalance)
+      : membershipBalance;
 
-    if (isMember && useMembership) {
-      // If a balance deduction was computed earlier, use that first (for any member).
-      // This matches the UI where membershipBalanceDeduction is shown in Step 3.
-      if (membershipBalanceDeduction > 0) {
-        appliedMembershipBalance = membershipBalanceDeduction;
-        appliedMembershipDiscount = 0; // do not double-apply
-      } else {
-        // No balance used -> apply membership discount if present
-        appliedMembershipDiscount = membershipDiscountAmount || 0;
-        appliedMembershipBalance = 0;
-      }
-    }
+  setMembershipBalance(newBalance);
 
-    const servicesTotal = selectedServices.reduce(
-      (sum, service) => sum + service.price * (service.quantity || 1),
-      0
-    );
+  const grandTotal = Math.max(
+    0,
+    servicesTotal -
+      (promoReduction || 0) -
+      (discountReduction || 0) -
+      appliedMembershipDiscount -
+      appliedMembershipBalance
+  );
 
-    // Calculate new balance (deduct only if we actually used balance)
-    const newBalance =
-      isMember && useMembership && appliedMembershipBalance > 0
-        ? Math.max(0, membershipBalance - appliedMembershipBalance)
-        : membershipBalance;
+  const orderData = {
+    order_number: orderNumber,
+    customer_id: selectedCustomer.id,
+    customer_name: customerName,
+    services: selectedServices.map((service) => ({
+      service_id: service.id,
+      name: service.name,
+      price: service.price,
+      quantity: service.quantity,
+    })),
+    subtotal: servicesTotal,
+    promoReduction: promoReduction || 0,
+    discountReduction: discountReduction || 0,
+    discount: discount,
+    promo: promoApplied || null,
+    membershipDiscount: appliedMembershipDiscount,
+    membershipBalanceDeduction: appliedMembershipBalance,
+    grand_total: grandTotal,
+    new_membership_balance: newBalance,
 
-    // Update local state so Step 3 / UI remain consistent
-    setMembershipBalance(newBalance);
+    // Use actual user data - remove fallbacks to see what's really being sent
+    employee_name: currentUserData?.name,
+    employee_id: currentUserData?.id,
+    branch_name: currentUserData?.branch_name,
+    branch_id: currentUserData?.branch_id,
+    handledBy: currentUserData?.name,
+    branch: currentUserData?.branch_name || currentUserData?.branch,
 
-    const grandTotal = Math.max(
-      0,
-      servicesTotal -
-        (promoReduction || 0) -
-        (discountReduction || 0) -
-        appliedMembershipDiscount -
-        appliedMembershipBalance
-    );
+    is_member: isMember,
+    membership_type: isMember ? membershipType : null,
+    date: new Date().toISOString(),
+  };
 
-    const orderData = {
-      order_number: orderNumber,
-      customer_id: selectedCustomer.id,
-      customer_name: customerName,
-      services: selectedServices.map((service) => ({
-        service_id: service.id,
-        name: service.name,
-        price: service.price,
-        quantity: service.quantity,
-      })),
-      subtotal: servicesTotal,
-      // include the raw reductions for backend verification
-      promoReduction: promoReduction || 0,
-      discountReduction: discountReduction || 0,
-      discount: discount,
-      promo: promoApplied || null,
-      membershipDiscount: appliedMembershipDiscount,
-      membershipBalanceDeduction: appliedMembershipBalance,
-      grand_total: grandTotal,
-      new_membership_balance: newBalance,
+  try {
+    const response = await fetch("http://localhost/API/saveAcquire.php", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(orderData), // Send the complete orderData
+    });
 
-      employee_name: currentUserData?.name || "Reception User",
-      employee_id: currentUserData?.id || null,
-      branch_name: currentUserData?.branch_name || "Main Branch",
-      branch_id: currentUserData?.branch_id || null,
-      handled_by: currentUserData?.name,
-      branch: currentUserData?.branch_name,
-      is_member: isMember,
-      membership_type: isMember ? membershipType : null,
-      date: new Date().toISOString(),
-    };
+    const text = await response.text();
+    console.log('Server Response:', text); // Debug log
 
     try {
-      const response = await fetch("http://localhost/API/saveAcquire.php", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...orderData,
-          handled_by: currentUserData?.name,
-          branch: currentUserData?.branch_name,
-          employee_id: currentUserData?.id,
-        }),
-      });
+      const result = JSON.parse(text);
 
-      const text = await response.text();
+      if (result.message) {
+        toast.success("Service acquired successfully!");
 
-      // Try to parse server result. Prefer server returned values (new balance, totals) for Step 4.
-      try {
-        const result = JSON.parse(text);
+        // ✅ CRITICAL FIX: Use server response data instead of local orderData
+        const finalOrderData = {
+          ...orderData, // Start with local data
+          // Override with server-provided data (this is what matters!)
+          grand_total: result.calculated_total ?? orderData.grand_total,
+          new_membership_balance: result.new_balance ?? orderData.new_membership_balance,
+          membership_balance_updated: result.membership_balance_updated,
+          
+          // ✅ USE THE SERVER'S BRANCH AND HANDLED_BY DATA
+          branch: result.branch ?? result.branch_name ?? orderData.branch,
+          branch_name: result.branch_name ?? result.branch ?? orderData.branch_name,
+          handled_by: result.handled_by ?? orderData.handledBy,
+          handledBy: result.handled_by ?? orderData.handledBy,
+          employee_name: result.handled_by ?? orderData.employee_name,
+          
+          // Include server debug info
+          server_response: result,
+        };
 
-        if (result.message) {
-          toast.success("Service acquired successfully!");
+        console.log('Final Order Data for Display:', finalOrderData); // Debug log
 
-          // Prefer authoritative server values if provided
-          const serverNewBalance =
-            typeof result.new_balance !== "undefined"
-              ? result.new_balance
-              : orderData.new_membership_balance;
-          const serverGrandTotal =
-            typeof result.calculated_total !== "undefined"
-              ? result.calculated_total
-              : orderData.grand_total;
-          const serverMembershipUpdated = !!result.membership_balance_updated;
-
-          // Update local state from server response if available
-          setMembershipBalance(serverNewBalance);
-          setSavedOrderData({
-            ...orderData,
-            grand_total: serverGrandTotal,
-            new_membership_balance: serverNewBalance,
-            membership_balance_updated: serverMembershipUpdated,
-            // attach debug info from server if present
-            server_debug: result.debug_info || null,
-          });
-
-          setCurrentStep(4);
-
-          // Remove new-member flag when balance reaches zero
-          if (isNewMember && serverNewBalance <= 0) {
-            try {
-              if (selectedCustomer?.id) {
-                localStorage.removeItem(`newMember:${selectedCustomer.id}`);
-              }
-            } catch (_) {}
-            setIsNewMember(false);
-          }
-        } else {
-          toast.error(result.error || "Save failed");
-        }
-      } catch (parseErr) {
-        console.error("Invalid JSON from server:", text);
-        // Fallback: use local orderData so UI still proceeds
-        setSavedOrderData(orderData);
+        setMembershipBalance(finalOrderData.new_membership_balance);
+        setSavedOrderData(finalOrderData);
         setCurrentStep(4);
-        toast.warning("Saved locally but server returned invalid JSON");
+
+        if (isNewMember && finalOrderData.new_membership_balance <= 0) {
+          try {
+            if (selectedCustomer?.id) {
+              localStorage.removeItem(`newMember:${selectedCustomer.id}`);
+            }
+          } catch (_) {}
+          setIsNewMember(false);
+        }
+      } else {
+        toast.error(result.error || "Save failed");
       }
-    } catch (err) {
-      console.error("Save failed", err);
-      toast.error("Network error occurred");
+    } catch (parseErr) {
+      console.error("Invalid JSON from server:", text);
+      // Even if JSON is invalid, use the local data but log it
+      console.log('Using local orderData due to JSON error:', orderData);
+      setSavedOrderData(orderData);
+      setCurrentStep(4);
+      toast.warning("Saved locally but server returned invalid JSON");
     }
-  };
+  } catch (err) {
+    console.error("Save failed", err);
+    toast.error("Network error occurred");
+  }
+};
 
   // Add these helper functions
   const calculateTotalOriginalPrice = (services) => {
@@ -1047,18 +1113,18 @@ export default function ServiceOrderPage() {
   };
 
   const filteredCategories = serviceCategories.filter((category) => {
-    const query = searchQuery.toLowerCase();
+  const query = searchQuery.toLowerCase();
 
-    // Match category name
-    const matchesCategory = category.name.toLowerCase().includes(query);
+  // Match category name
+  const matchesCategory = category.name.toLowerCase().includes(query);
 
-    // Match any service name within the category
-    const matchesService = category.services?.some((service) =>
-      service.name.toLowerCase().includes(query)
-    );
+  // Match any service name within the category
+  const matchesService = category.services?.some((service) =>
+    service.name.toLowerCase().includes(query)
+  );
 
-    return matchesCategory || matchesService;
-  });
+  return matchesCategory || matchesService;
+});
 
   const handleNewCustomerChange = (e) => {
     const { name, value } = e.target;
@@ -1339,8 +1405,7 @@ export default function ServiceOrderPage() {
                     <p className="text-xs text-emerald-300">Administrator</p>
                   </div>
                 </div>
-                <button
-                  className="text-emerald-300 hover:text-white transition-colors"
+                <button className="text-emerald-300 hover:text-white transition-colors"
                   onClick={handleLogout}
                 >
                   <LogOut size={18} />
@@ -1355,7 +1420,7 @@ export default function ServiceOrderPage() {
             </div>
           </motion.div>
         </nav>
-
+        
         {/* Main Content - Service Order */}
         <main className="flex-1 p-6 bg-gray-50 text-gray-900 ml-64">
           <motion.div
@@ -1448,22 +1513,32 @@ export default function ServiceOrderPage() {
                             </h3>
                             <div className="flex items-center mt-1">
                               {/* Member / Regular Customer badge */}
-                              <span
-                                className={`text-xs px-2 py-1 rounded-full ${
-                                  isMember
-                                    ? "bg-emerald-100 text-emerald-800"
-                                    : "bg-gray-100 text-gray-800"
-                                }`}
-                              >
-                                {isMember ? "Member" : "Regular Customer"}
-                              </span>
+          <span
+            className={`text-xs px-2 py-1 rounded-full ${
+              isMember && !selectedCustomer?.isExpired
+                ? "bg-emerald-100 text-emerald-800"
+                : selectedCustomer?.isExpired
+                ? "bg-red-100 text-red-800"
+                : "bg-gray-100 text-gray-800"
+            }`}
+          >
+            {selectedCustomer?.isExpired 
+              ? "Expired Member" 
+              : isMember 
+                ? "Member" 
+                : "Regular Customer"
+            }
+          </span>
 
                               {/* Expiration date (if applicable) */}
-                              {isMember && membershipExpiration && (
-                                <span className="text-xs text-gray-500 ml-2">
-                                  Expires: {formatDate(membershipExpiration)}
-                                </span>
-                              )}
+          {isMember && membershipExpiration && (
+            <span className={`text-xs ml-2 ${
+              selectedCustomer?.isExpired ? 'text-red-600' : 'text-gray-500'
+            }`}>
+              {selectedCustomer?.isExpired ? 'Expired: ' : 'Expires: '} 
+              {formatDate(membershipExpiration)}
+            </span>
+          )}
 
                               {/* 🆕 New Member badge */}
                               {isNewMember && (
@@ -1483,7 +1558,12 @@ export default function ServiceOrderPage() {
                             <X size={18} />
                           </button>
                         </div>
-
+{/* Expiration Warning */}
+        {selectedCustomer?.isExpired && (
+          <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
+            ⚠️ Membership has expired. Benefits cannot be used.
+          </div>
+        )}
                         {isMember && (
                           <div className="mt-4 space-y-2">
                             <div className="flex justify-between text-sm">
@@ -1532,24 +1612,28 @@ export default function ServiceOrderPage() {
                         )}
                         {/* New toggle: Use membership benefits */}
                         {isMember && (
-                          <div className="flex justify-between items-center text-sm mt-2">
-                            <label
-                              htmlFor="useMembership"
-                              className="text-gray-600"
-                            >
-                              Use membership benefits
-                            </label>
-                            <input
-                              id="useMembership"
-                              type="checkbox"
-                              checked={useMembership}
-                              onChange={(e) =>
-                                setUseMembership(e.target.checked)
-                              }
-                              className="accent-emerald-600"
-                            />
-                          </div>
-                        )}
+      <div className="flex justify-between items-center text-sm mt-2">
+        <label
+          htmlFor="useMembership"
+          className={`${selectedCustomer?.isExpired ? 'text-gray-400' : 'text-gray-600'}`}
+        >
+          Use membership benefits
+          {selectedCustomer?.isExpired && " (Expired)"}
+        </label>
+        <input
+          id="useMembership"
+          type="checkbox"
+          checked={useMembership && !selectedCustomer?.isExpired}
+          onChange={(e) => {
+            if (!selectedCustomer?.isExpired) {
+              setUseMembership(e.target.checked);
+            }
+          }}
+          disabled={selectedCustomer?.isExpired}
+          className="accent-emerald-600 disabled:opacity-50"
+        />
+      </div>
+    )}
                       </div>
                     ) : (
                       <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
@@ -1670,14 +1754,14 @@ export default function ServiceOrderPage() {
                       Service Categories
                     </h2>
                     <div className="mb-4">
-                      <input
-                        type="text"
-                        placeholder="Search categories or services..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                      />
-                    </div>
+  <input
+    type="text"
+    placeholder="Search categories or services..."
+    value={searchQuery}
+    onChange={(e) => setSearchQuery(e.target.value)}
+    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+  />
+</div>
                     <div className="space-y-2 max-h-[500px] overflow-y-auto">
                       {filteredCategories.map((category) => (
                         <motion.button
@@ -1800,188 +1884,167 @@ export default function ServiceOrderPage() {
                 {/* Selected Services & Summary */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                   {/* Selected Services */}
-                  <div className="lg:col-span-2 bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                    {/* Header */}
-                    <div className="flex justify-between items-center mb-4">
-                      <h2 className="font-semibold text-gray-900 flex items-center text-lg">
-                        <ShoppingCart className="mr-2" size={20} />
-                        Selected Services
-                        <span className="ml-2 bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-sm">
-                          {selectedServices.length}
-                        </span>
-                      </h2>
-                      {selectedServices.length > 0 && (
-                        <button
-                          onClick={() => {
-                            setSelectedServices([]);
-                            setSelectedPromoServices({});
-                            setPromoApplied(null);
-                            toast.info("All selected services cleared");
-                          }}
-                          className="text-sm text-red-600 hover:text-red-800 flex items-center transition-colors"
-                        >
-                          <Trash2 className="mr-1" size={16} />
-                          Clear All
-                        </button>
-                      )}
-                    </div>
+<div className="lg:col-span-2 bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+  {/* Header */}
+  <div className="flex justify-between items-center mb-4">
+    <h2 className="font-semibold text-gray-900 flex items-center text-lg">
+      <ShoppingCart className="mr-2" size={20} />
+      Selected Services
+      <span className="ml-2 bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-sm">
+        {selectedServices.length}
+      </span>
+    </h2>
+    {selectedServices.length > 0 && (
+      <button
+        onClick={() => {
+          setSelectedServices([]);
+          setSelectedPromoServices({});
+          setPromoApplied(null);
+          toast.info("All selected services cleared");
+        }}
+        className="text-sm text-red-600 hover:text-red-800 flex items-center transition-colors"
+      >
+        <Trash2 className="mr-1" size={16} />
+        Clear All
+      </button>
+    )}
+  </div>
 
-                    {/* Scrollable list */}
-                    <div className="max-h-96 overflow-y-auto space-y-3 pr-2">
-                      {selectedServices.length === 0 ? (
-                        <div className="text-center py-8 text-gray-500">
-                          <ShoppingCart
-                            size={48}
-                            className="mx-auto mb-3 text-gray-300"
-                          />
-                          <p>No services selected yet</p>
-                          <p className="text-sm mt-1">
-                            Choose services from the list or browse promos
-                          </p>
-                        </div>
-                      ) : (
-                        // Ensure deduplication by service ID + bundleId
-                        [
-                          ...new Map(
-                            selectedServices.map((s) => [
-                              s.id + (s.bundleId || ""),
-                              s,
-                            ])
-                          ).values(),
-                        ].map((service, index) => (
-                          <motion.div
-                            key={`${service.id}-${index}`}
-                            className="grid grid-cols-[auto_1fr_auto_auto] items-center gap-4 p-4 bg-white rounded-lg border border-gray-200 hover:border-blue-200 transition-colors"
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, x: 10 }}
-                            transition={{ delay: index * 0.05 }}
-                          >
-                            {/* Remove button */}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
+  {/* Scrollable list */}
+  <div className="max-h-96 overflow-y-auto space-y-3 pr-2">
+    {selectedServices.length === 0 ? (
+      <div className="text-center py-8 text-gray-500">
+        <ShoppingCart size={48} className="mx-auto mb-3 text-gray-300" />
+        <p>No services selected yet</p>
+        <p className="text-sm mt-1">
+          Choose services from the list or browse promos
+        </p>
+      </div>
+    ) : (
+      // Ensure deduplication by service ID + bundleId
+      [...new Map(
+        selectedServices.map((s) => [s.id + (s.bundleId || ""), s])
+      ).values()].map((service, index) => (
+        <motion.div
+          key={`${service.id}-${index}`}
+          className="grid grid-cols-[auto_1fr_auto_auto] items-center gap-4 p-4 bg-white rounded-lg border border-gray-200 hover:border-blue-200 transition-colors"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, x: 10 }}
+          transition={{ delay: index * 0.05 }}
+        >
+          {/* Remove button */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
 
-                                if (service.isFromBundle && service.bundleId) {
-                                  // Remove all services from the same bundle
-                                  setSelectedServices((prev) =>
-                                    prev.filter(
-                                      (s) => s.bundleId !== service.bundleId
-                                    )
-                                  );
-                                  toast.info(
-                                    `"${service.bundleName}" bundle removed from cart`
-                                  );
-                                } else {
-                                  // Remove single service
-                                  removeService(service.id);
+              if (service.isFromBundle && service.bundleId) {
+                // Remove all services from the same bundle
+                setSelectedServices((prev) =>
+                  prev.filter((s) => s.bundleId !== service.bundleId)
+                );
+                toast.info(`"${service.bundleName}" bundle removed from cart`);
+              } else {
+                // Remove single service
+                removeService(service.id);
 
-                                  // Also remove from selectedPromoServices if it's from a promo
-                                  if (service.isFromPromo && service.promoId) {
-                                    setSelectedPromoServices((prev) => ({
-                                      ...prev,
-                                      [service.promoId]: {
-                                        ...prev[service.promoId],
-                                        [service.id]: false,
-                                      },
-                                    }));
-                                  }
-                                }
-                              }}
-                              className="text-red-500 hover:text-red-700 transition-colors p-1 rounded"
-                            >
-                              <X size={18} />
-                            </button>
+                // Also remove from selectedPromoServices if it's from a promo
+                if (service.isFromPromo && service.promoId) {
+                  setSelectedPromoServices((prev) => ({
+                    ...prev,
+                    [service.promoId]: {
+                      ...prev[service.promoId],
+                      [service.id]: false,
+                    },
+                  }));
+                }
+              }
+            }}
+            className="text-red-500 hover:text-red-700 transition-colors p-1 rounded"
+          >
+            <X size={18} />
+          </button>
 
-                            {/* Service info */}
-                            <div className="min-w-0">
-                              <p className="font-medium text-gray-900 truncate">
-                                {service.name}
-                              </p>
-                              <div className="flex items-center space-x-2 mt-1">
-                                <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                                  {serviceCategories.find((cat) =>
-                                    cat.services.some(
-                                      (s) => s.id === service.id
-                                    )
-                                  )?.name || "General"}
-                                </span>
-                                {service.isFromPromo && (
-                                  <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                                    Promo Discount
-                                  </span>
-                                )}
-                                {service.isFromBundle && (
-                                  <span className="text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded">
-                                    Bundle
-                                  </span>
-                                )}
-                              </div>
-                            </div>
+          {/* Service info */}
+          <div className="min-w-0">
+            <p className="font-medium text-gray-900 truncate">
+              {service.name}
+            </p>
+            <div className="flex items-center space-x-2 mt-1">
+              <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                {serviceCategories.find((cat) =>
+                  cat.services.some((s) => s.id === service.id)
+                )?.name || "General"}
+              </span>
+              {service.isFromPromo && (
+                <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                  Promo Discount
+                </span>
+              )}
+              {service.isFromBundle && (
+                <span className="text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded">
+                  Bundle
+                </span>
+              )}
+            </div>
+          </div>
 
-                            {/* Quantity controls — hide for bundle services */}
-                            {!service.isFromBundle && (
-                              <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-1">
-                                <button
-                                  onClick={() =>
-                                    updateQuantity(
-                                      service.id,
-                                      service.quantity - 1
-                                    )
-                                  }
-                                  className="w-8 h-8 flex items-center justify-center bg-white border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                                  disabled={service.quantity === 1}
-                                >
-                                  -
-                                </button>
-                                <span className="w-8 text-center font-medium text-gray-900">
-                                  {service.quantity}
-                                </span>
-                                <button
-                                  onClick={() =>
-                                    updateQuantity(
-                                      service.id,
-                                      service.quantity + 1
-                                    )
-                                  }
-                                  className="w-8 h-8 flex items-center justify-center bg-white border border-gray-300 rounded hover:bg-gray-100"
-                                >
-                                  +
-                                </button>
-                              </div>
-                            )}
+          {/* Quantity controls — hide for bundle services */}
+          {!service.isFromBundle && (
+            <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-1">
+              <button
+                onClick={() =>
+                  updateQuantity(service.id, service.quantity - 1)
+                }
+                className="w-8 h-8 flex items-center justify-center bg-white border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={service.quantity === 1}
+              >
+                -
+              </button>
+              <span className="w-8 text-center font-medium text-gray-900">
+                {service.quantity}
+              </span>
+              <button
+                onClick={() =>
+                  updateQuantity(service.id, service.quantity + 1)
+                }
+                className="w-8 h-8 flex items-center justify-center bg-white border border-gray-300 rounded hover:bg-gray-100"
+              >
+                +
+              </button>
+            </div>
+          )}
 
-                            {/* Price */}
-                            <div className="text-right min-w-24">
-                              <div className="font-bold text-gray-900">
-                                ₱
-                                {(service.isFromBundle
-                                  ? service.price
-                                  : service.price * service.quantity
-                                ).toLocaleString("en-PH", {
-                                  minimumFractionDigits: 2,
-                                  maximumFractionDigits: 2,
-                                })}
-                              </div>
-                              {service.originalPrice &&
-                                service.originalPrice > service.price && (
-                                  <div className="text-xs text-gray-500 line-through">
-                                    ₱
-                                    {(service.isFromBundle
-                                      ? service.originalPrice
-                                      : service.originalPrice * service.quantity
-                                    ).toLocaleString("en-PH", {
-                                      minimumFractionDigits: 2,
-                                      maximumFractionDigits: 2,
-                                    })}
-                                  </div>
-                                )}
-                            </div>
-                          </motion.div>
-                        ))
-                      )}
-                    </div>
-                  </div>
+          {/* Price */}
+          <div className="text-right min-w-24">
+            <div className="font-bold text-gray-900">
+              ₱
+              {(
+                (service.isFromBundle ? service.price : service.price * service.quantity)
+              ).toLocaleString("en-PH", {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}
+            </div>
+            {service.originalPrice &&
+              service.originalPrice > service.price && (
+                <div className="text-xs text-gray-500 line-through">
+                  ₱
+                  {(
+                    (service.isFromBundle ? service.originalPrice : service.originalPrice * service.quantity)
+                  ).toLocaleString("en-PH", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
+                </div>
+              )}
+          </div>
+        </motion.div>
+      ))
+    )}
+  </div>
+</div>
+
 
                   {/* Order Summary */}
                   <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
@@ -2048,11 +2111,12 @@ export default function ServiceOrderPage() {
                           <span>Total:</span>
                           <span>
                             {formatCurrency(
-                              calculatedSubtotal -
-                                promoReduction -
-                                discountReduction -
-                                membershipReductionUsed
-                            )}
+  calculatedSubtotal -
+    promoReduction -
+    discountReduction -
+    membershipReductionUsed
+)}
+
                           </span>
                         </div>
                       </div>
@@ -2175,35 +2239,26 @@ export default function ServiceOrderPage() {
                                 </div>
 
                                 {/* 🔍 Search Bar */}
-                                <div className="mb-4">
-                                  <input
-                                    type="text"
-                                    placeholder="Search promotions..."
-                                    value={promoSearch}
-                                    onChange={(e) =>
-                                      setPromoSearch(e.target.value)
-                                    }
-                                    className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-700"
-                                  />
-                                </div>
+<div className="mb-4">
+  <input
+    type="text"
+    placeholder="Search promotions..."
+    value={promoSearch}
+    onChange={(e) => setPromoSearch(e.target.value)}
+    className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-700"
+  />
+</div>
+
 
                                 <div className="grid gap-6 max-h-[70vh] overflow-y-auto pr-2">
                                   {promos
                                     .filter(
-                                      (p) =>
-                                        p.status === "active" &&
-                                        (!promoSearch ||
-                                          p.name
-                                            .toLowerCase()
-                                            .includes(
-                                              promoSearch.toLowerCase()
-                                            ) ||
-                                          p.description
-                                            ?.toLowerCase()
-                                            .includes(
-                                              promoSearch.toLowerCase()
-                                            ))
-                                    )
+  (p) =>
+    p.status === "active" &&
+    (!promoSearch ||
+      p.name.toLowerCase().includes(promoSearch.toLowerCase()) ||
+      p.description?.toLowerCase().includes(promoSearch.toLowerCase()))
+)
 
                                     .map((promo) => (
                                       <motion.div
@@ -2528,35 +2583,26 @@ export default function ServiceOrderPage() {
                                 </div>
 
                                 {/* 🔍 Search Bar */}
-                                <div className="mb-4">
-                                  <input
-                                    type="text"
-                                    placeholder="Search Bundles..."
-                                    value={bundleSearch}
-                                    onChange={(e) =>
-                                      setBundleSearch(e.target.value)
-                                    }
-                                    className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-700"
-                                  />
-                                </div>
+<div className="mb-4">
+  <input
+    type="text"
+    placeholder="Search Bundles..."
+    value={bundleSearch}
+    onChange={(e) => setBundleSearch(e.target.value)}
+    className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-700"
+  />
+</div>
+
 
                                 <div className="grid gap-6 max-h-[70vh] overflow-y-auto pr-2">
                                   {bundles
                                     .filter(
-                                      (p) =>
-                                        p.status === "active" &&
-                                        (!bundleSearch ||
-                                          p.name
-                                            .toLowerCase()
-                                            .includes(
-                                              bundleSearch.toLowerCase()
-                                            ) ||
-                                          p.description
-                                            ?.toLowerCase()
-                                            .includes(
-                                              bundleSearch.toLowerCase()
-                                            ))
-                                    )
+  (p) =>
+    p.status === "active" &&
+    (!bundleSearch ||
+      p.name.toLowerCase().includes(bundleSearch.toLowerCase()) ||
+      p.description?.toLowerCase().includes(bundleSearch.toLowerCase()))
+)
 
                                     .map((bundle) => (
                                       <motion.div
@@ -2812,39 +2858,27 @@ export default function ServiceOrderPage() {
                         <span className="font-medium">{customerName}</span>
                       </div>
                       {isMember && (
-                        <>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">
-                              Membership Type:
-                            </span>
-                            <span className="font-medium">
-                              {membershipType}
-                            </span>
-                          </div>
-                          {membershipBalanceDeduction > 0 && (
-                            <div className="flex justify-between text-sm">
-                              <span className="text-gray-600">
-                                Balance Deduction:
-                              </span>
-                              <span className="font-medium text-red-600">
-                                -₱{membershipBalanceDeduction.toLocaleString()}
-                              </span>
-                            </div>
-                          )}
-                          <div className="flex justify-between text-sm font-semibold border-t pt-2">
-                            <span className="text-gray-700">
-                              New Balance After Purchase:
-                            </span>
-                            <span className="text-emerald-600">
-                              ₱
-                              {Math.max(
-                                0,
-                                membershipBalance - membershipBalanceDeduction
-                              ).toLocaleString()}
-                            </span>
-                          </div>
-                        </>
-                      )}
+  <>
+    <div className="flex justify-between">
+      <span className="text-gray-600">Membership Type:</span>
+      <span className="font-medium">{membershipType}</span>
+    </div>
+    {membershipBalanceDeduction > 0 && (
+      <div className="flex justify-between text-sm">
+        <span className="text-gray-600">Balance Deduction:</span>
+        <span className="font-medium text-red-600">
+          -₱{membershipBalanceDeduction.toLocaleString()}
+        </span>
+      </div>
+    )}
+    <div className="flex justify-between text-sm font-semibold border-t pt-2">
+      <span className="text-gray-700">New Balance After Purchase:</span>
+      <span className="text-emerald-600">
+        ₱{Math.max(0, membershipBalance - membershipBalanceDeduction).toLocaleString()}
+      </span>
+    </div>
+  </>
+)}
                     </div>
                   </div>
 
@@ -2894,29 +2928,26 @@ export default function ServiceOrderPage() {
                       )}
 
                       {/* Membership */}
-                      {isMember && useMembership && (
-                        <>
-                          {/* Show 50% discount for regular members */}
-                          {!isNewMember && membershipDiscountAmount > 0 && (
-                            <div className="flex justify-between text-emerald-600">
-                              <span>Membership Discount (50%):</span>
-                              <span>
-                                -{formatCurrency(membershipDiscountAmount)}
-                              </span>
-                            </div>
-                          )}
-
-                          {/* Show balance deduction for new members with balance */}
-                          {isNewMember && membershipBalanceDeduction > 0 && (
-                            <div className="flex justify-between text-emerald-600">
-                              <span>Membership Balance Used:</span>
-                              <span>
-                                -{formatCurrency(membershipBalanceDeduction)}
-                              </span>
-                            </div>
-                          )}
-                        </>
-                      )}
+{isMember && useMembership && (
+  <>
+    {/* Show 50% discount for regular members */}
+    {!isNewMember && membershipDiscountAmount > 0 && (
+      <div className="flex justify-between text-emerald-600">
+        <span>Membership Discount (50%):</span>
+        <span>-{formatCurrency(membershipDiscountAmount)}</span>
+      </div>
+    )}
+    
+    {/* Show balance deduction for new members with balance */}
+    {isNewMember && membershipBalanceDeduction > 0 && (
+      <div className="flex justify-between text-emerald-600">
+        <span>Membership Balance Used:</span>
+        <span>-{formatCurrency(membershipBalanceDeduction)}</span>
+      </div>
+    )}
+  </>
+)}
+                      
 
                       {/* Total */}
                       <div className="border-t pt-3 mt-3">
@@ -2924,11 +2955,11 @@ export default function ServiceOrderPage() {
                           <span>Total:</span>
                           <span>
                             {formatCurrency(
-                              calculatedSubtotal -
-                                promoReduction -
-                                discountReduction -
-                                membershipReductionUsed
-                            )}
+  calculatedSubtotal -
+    promoReduction -
+    discountReduction -
+    membershipReductionUsed
+)}
                           </span>
                         </div>
                       </div>
@@ -3191,25 +3222,22 @@ export default function ServiceOrderPage() {
                       )}
 
                       {/* Membership */}
-                      {(savedOrderData.membershipDiscount ?? 0) > 0 && (
-                        <div className="flex justify-between text-emerald-600">
-                          <span>Membership Discount (50%):</span>
-                          <span className="tabular-nums">
-                            -{formatCurrency(savedOrderData.membershipDiscount)}
-                          </span>
-                        </div>
-                      )}
-                      {(savedOrderData.membershipBalanceDeduction ?? 0) > 0 && (
-                        <div className="flex justify-between text-emerald-600">
-                          <span>Membership Balance Used:</span>
-                          <span className="tabular-nums">
-                            -
-                            {formatCurrency(
-                              savedOrderData.membershipBalanceDeduction
-                            )}
-                          </span>
-                        </div>
-                      )}
+{(savedOrderData.membershipDiscount ?? 0) > 0 && (
+  <div className="flex justify-between text-emerald-600">
+    <span>Membership Discount (50%):</span>
+    <span className="tabular-nums">
+      -{formatCurrency(savedOrderData.membershipDiscount)}
+    </span>
+  </div>
+)}
+{(savedOrderData.membershipBalanceDeduction ?? 0) > 0 && (
+  <div className="flex justify-between text-emerald-600">
+    <span>Membership Balance Used:</span>
+    <span className="tabular-nums">
+      -{formatCurrency(savedOrderData.membershipBalanceDeduction)}
+    </span>
+  </div>
+)}
 
                       {/* Total */}
                       <div className="border-t pt-3 mt-3">
@@ -3961,19 +3989,12 @@ export default function ServiceOrderPage() {
                       </button>
                     </div>
 
-                    <form
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        handleMembershipUpgrade();
-                      }}
-                      className="flex-1 overflow-y-auto"
-                    >
+                    <form onSubmit={(e) => { e.preventDefault(); handleMembershipUpgrade(); }} className="flex-1 overflow-y-auto">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         {/* Membership Type */}
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Membership Type{" "}
-                            <span className="text-red-500">*</span>
+                            Membership Type <span className="text-red-500">*</span>
                           </label>
                           <select
                             value={upgradeMembershipForm.type}
@@ -4032,8 +4053,7 @@ export default function ServiceOrderPage() {
                         {/* Payment Method */}
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Payment Method{" "}
-                            <span className="text-red-500">*</span>
+                            Payment Method <span className="text-red-500">*</span>
                           </label>
                           <select
                             value={upgradeMembershipForm.paymentMethod || ""}

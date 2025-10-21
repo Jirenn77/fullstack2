@@ -135,7 +135,7 @@ export default function ServiceOrderPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [customers, setCustomers] = useState([]);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
-    const [currentUser, setCurrentUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
   const [isCustomersLoading, setIsCustomersLoading] = useState(true);
   const [membershipTemplates, setMembershipTemplates] = useState([]);
   const [customersError, setCustomersError] = useState(null);
@@ -160,7 +160,8 @@ export default function ServiceOrderPage() {
   });
 
   // Membership upgrade states
-  const [isMembershipUpgradeModalOpen, setIsMembershipUpgradeModalOpen] = useState(false);
+  const [isMembershipUpgradeModalOpen, setIsMembershipUpgradeModalOpen] =
+    useState(false);
   const [upgradeMembershipForm, setUpgradeMembershipForm] = useState({
     type: "basic",
     name: "Basic",
@@ -481,8 +482,8 @@ export default function ServiceOrderPage() {
   );
 
   const premiumServiceIds = membershipServices.map((s) => s.id);
-  
-          const premiumSubtotal = selectedServices
+
+  const premiumSubtotal = selectedServices
     .filter(
       (service) =>
         premiumServiceIds.includes(service.id) &&
@@ -505,34 +506,33 @@ export default function ServiceOrderPage() {
     ? premiumSubtotal * 0.5
     : 0;
 
- const membershipBalanceDeduction = isMember && useMembership && membershipBalance > 0
-  ? (() => {
-      // Subtotal of services eligible for balance (exclude promo & bundle)
-      const eligibleServicesTotal = selectedServices
-        .filter((s) => !s.isFromPromo && !s.isFromBundle)
-        .reduce((sum, s) => sum + s.price * (s.quantity || 1), 0);
+  const membershipBalanceDeduction =
+    isMember && useMembership && membershipBalance > 0
+      ? (() => {
+          // Subtotal of services eligible for balance (exclude promo & bundle)
+          const eligibleServicesTotal = selectedServices
+            .filter((s) => !s.isFromPromo && !s.isFromBundle)
+            .reduce((sum, s) => sum + s.price * (s.quantity || 1), 0);
 
-      // Do NOT shrink eligibleServicesTotal by promo/discount — membership balance
-      // is applied to the subtotal of eligible services (before discount deduction).
-      const amountAfterMembershipDiscount =
-        !isNewMember && membershipDiscountAmount > 0
-          ? Math.max(eligibleServicesTotal - membershipDiscountAmount, 0)
-          : eligibleServicesTotal;
+          // Do NOT shrink eligibleServicesTotal by promo/discount — membership balance
+          // is applied to the subtotal of eligible services (before discount deduction).
+          const amountAfterMembershipDiscount =
+            !isNewMember && membershipDiscountAmount > 0
+              ? Math.max(eligibleServicesTotal - membershipDiscountAmount, 0)
+              : eligibleServicesTotal;
 
-      // Deduct up to the available membership balance
-      return Math.min(membershipBalance, amountAfterMembershipDiscount);
-    })()
-  : 0;
+          // Deduct up to the available membership balance
+          return Math.min(membershipBalance, amountAfterMembershipDiscount);
+        })()
+      : 0;
 
-
-// Unified membership reduction for total calculation
-const membershipReductionUsed =
-  isMember && useMembership
-    ? isNewMember
-      ? membershipBalanceDeduction // new members
-      : membershipDiscountAmount // existing members
-    : 0;
-
+  // Unified membership reduction for total calculation
+  const membershipReductionUsed =
+    isMember && useMembership
+      ? isNewMember
+        ? membershipBalanceDeduction // new members
+        : membershipDiscountAmount // existing members
+      : 0;
 
   const updateQuantity = (serviceId, newQuantity) => {
     setSelectedServices((prev) =>
@@ -545,151 +545,156 @@ const membershipReductionUsed =
   };
 
   const confirmSave = async () => {
-  if (!selectedCustomer || selectedServices.length === 0) {
-    toast.warning("Please select a customer and at least one service.");
-    return;
-  }
-
-  // Get current user data
-  const currentUserResponse = await fetch("http://localhost/API/branches.php?action=user", {
-    credentials: "include"
-  });
-  const currentUserData = await currentUserResponse.json();
-
-  console.log('Current User Data:', currentUserData); // Debug log
-
-  let appliedMembershipDiscount = 0;
-  let appliedMembershipBalance = 0;
-
-  if (isMember && useMembership) {
-    if (membershipBalanceDeduction > 0) {
-      appliedMembershipBalance = membershipBalanceDeduction;
-      appliedMembershipDiscount = 0;
-    } else {
-      appliedMembershipDiscount = membershipDiscountAmount || 0;
-      appliedMembershipBalance = 0;
+    if (!selectedCustomer || selectedServices.length === 0) {
+      toast.warning("Please select a customer and at least one service.");
+      return;
     }
-  }
 
-  const servicesTotal = selectedServices.reduce(
-    (sum, service) => sum + service.price * (service.quantity || 1),
-    0
-  );
+    // Get current user data
+    const currentUserResponse = await fetch(
+      "http://localhost/API/branches.php?action=user",
+      {
+        credentials: "include",
+      }
+    );
+    const currentUserData = await currentUserResponse.json();
 
-  const newBalance =
-    isMember && useMembership && appliedMembershipBalance > 0
-      ? Math.max(0, membershipBalance - appliedMembershipBalance)
-      : membershipBalance;
+    console.log("Current User Data:", currentUserData); // Debug log
 
-  setMembershipBalance(newBalance);
+    let appliedMembershipDiscount = 0;
+    let appliedMembershipBalance = 0;
 
-  const grandTotal = Math.max(
-    0,
-    servicesTotal -
-      (promoReduction || 0) -
-      (discountReduction || 0) -
-      appliedMembershipDiscount -
-      appliedMembershipBalance
-  );
+    if (isMember && useMembership) {
+      if (membershipBalanceDeduction > 0) {
+        appliedMembershipBalance = membershipBalanceDeduction;
+        appliedMembershipDiscount = 0;
+      } else {
+        appliedMembershipDiscount = membershipDiscountAmount || 0;
+        appliedMembershipBalance = 0;
+      }
+    }
 
-  const orderData = {
-    order_number: orderNumber,
-    customer_id: selectedCustomer.id,
-    customer_name: customerName,
-    services: selectedServices.map((service) => ({
-      service_id: service.id,
-      name: service.name,
-      price: service.price,
-      quantity: service.quantity,
-    })),
-    subtotal: servicesTotal,
-    promoReduction: promoReduction || 0,
-    discountReduction: discountReduction || 0,
-    discount: discount,
-    promo: promoApplied || null,
-    membershipDiscount: appliedMembershipDiscount,
-    membershipBalanceDeduction: appliedMembershipBalance,
-    grand_total: grandTotal,
-    new_membership_balance: newBalance,
+    const servicesTotal = selectedServices.reduce(
+      (sum, service) => sum + service.price * (service.quantity || 1),
+      0
+    );
 
-    // Use actual user data - remove fallbacks to see what's really being sent
-    employee_name: currentUserData?.name,
-    employee_id: currentUserData?.id,
-    branch_name: currentUserData?.branch_name,
-    branch_id: currentUserData?.branch_id,
-    handledBy: currentUserData?.name,
-    branch: currentUserData?.branch_name || currentUserData?.branch,
+    const newBalance =
+      isMember && useMembership && appliedMembershipBalance > 0
+        ? Math.max(0, membershipBalance - appliedMembershipBalance)
+        : membershipBalance;
 
-    is_member: isMember,
-    membership_type: isMember ? membershipType : null,
-    date: new Date().toISOString(),
-  };
+    setMembershipBalance(newBalance);
 
-  try {
-    const response = await fetch("http://localhost/API/saveAcquire.php", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(orderData), // Send the complete orderData
-    });
+    const grandTotal = Math.max(
+      0,
+      servicesTotal -
+        (promoReduction || 0) -
+        (discountReduction || 0) -
+        appliedMembershipDiscount -
+        appliedMembershipBalance
+    );
 
-    const text = await response.text();
-    console.log('Server Response:', text); // Debug log
+    const orderData = {
+      order_number: orderNumber,
+      customer_id: selectedCustomer.id,
+      customer_name: customerName,
+      services: selectedServices.map((service) => ({
+        service_id: service.id,
+        name: service.name,
+        price: service.price,
+        quantity: service.quantity,
+      })),
+      subtotal: servicesTotal,
+      promoReduction: promoReduction || 0,
+      discountReduction: discountReduction || 0,
+      discount: discount,
+      promo: promoApplied || null,
+      membershipDiscount: appliedMembershipDiscount,
+      membershipBalanceDeduction: appliedMembershipBalance,
+      grand_total: grandTotal,
+      new_membership_balance: newBalance,
+
+      // Use actual user data - remove fallbacks to see what's really being sent
+      employee_name: currentUserData?.name,
+      employee_id: currentUserData?.id,
+      branch_name: currentUserData?.branch_name,
+      branch_id: currentUserData?.branch_id,
+      handledBy: currentUserData?.name,
+      branch: currentUserData?.branch_name || currentUserData?.branch,
+
+      is_member: isMember,
+      membership_type: isMember ? membershipType : null,
+      date: new Date().toISOString(),
+    };
 
     try {
-      const result = JSON.parse(text);
+      const response = await fetch("http://localhost/API/saveAcquire.php", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(orderData), // Send the complete orderData
+      });
 
-      if (result.message) {
-        toast.success("Service acquired successfully!");
+      const text = await response.text();
+      console.log("Server Response:", text); // Debug log
 
-        // ✅ CRITICAL FIX: Use server response data instead of local orderData
-        const finalOrderData = {
-          ...orderData, // Start with local data
-          // Override with server-provided data (this is what matters!)
-          grand_total: result.calculated_total ?? orderData.grand_total,
-          new_membership_balance: result.new_balance ?? orderData.new_membership_balance,
-          membership_balance_updated: result.membership_balance_updated,
-          
-          // ✅ USE THE SERVER'S BRANCH AND HANDLED_BY DATA
-          branch: result.branch ?? result.branch_name ?? orderData.branch,
-          branch_name: result.branch_name ?? result.branch ?? orderData.branch_name,
-          handled_by: result.handled_by ?? orderData.handledBy,
-          handledBy: result.handled_by ?? orderData.handledBy,
-          employee_name: result.handled_by ?? orderData.employee_name,
-          
-          // Include server debug info
-          server_response: result,
-        };
+      try {
+        const result = JSON.parse(text);
 
-        console.log('Final Order Data for Display:', finalOrderData); // Debug log
+        if (result.message) {
+          toast.success("Service acquired successfully!");
 
-        setMembershipBalance(finalOrderData.new_membership_balance);
-        setSavedOrderData(finalOrderData);
-        setCurrentStep(4);
+          // ✅ CRITICAL FIX: Use server response data instead of local orderData
+          const finalOrderData = {
+            ...orderData, // Start with local data
+            // Override with server-provided data (this is what matters!)
+            grand_total: result.calculated_total ?? orderData.grand_total,
+            new_membership_balance:
+              result.new_balance ?? orderData.new_membership_balance,
+            membership_balance_updated: result.membership_balance_updated,
 
-        if (isNewMember && finalOrderData.new_membership_balance <= 0) {
-          try {
-            if (selectedCustomer?.id) {
-              localStorage.removeItem(`newMember:${selectedCustomer.id}`);
-            }
-          } catch (_) {}
-          setIsNewMember(false);
+            // ✅ USE THE SERVER'S BRANCH AND HANDLED_BY DATA
+            branch: result.branch ?? result.branch_name ?? orderData.branch,
+            branch_name:
+              result.branch_name ?? result.branch ?? orderData.branch_name,
+            handled_by: result.handled_by ?? orderData.handledBy,
+            handledBy: result.handled_by ?? orderData.handledBy,
+            employee_name: result.handled_by ?? orderData.employee_name,
+
+            // Include server debug info
+            server_response: result,
+          };
+
+          console.log("Final Order Data for Display:", finalOrderData); // Debug log
+
+          setMembershipBalance(finalOrderData.new_membership_balance);
+          setSavedOrderData(finalOrderData);
+          setCurrentStep(4);
+
+          if (isNewMember && finalOrderData.new_membership_balance <= 0) {
+            try {
+              if (selectedCustomer?.id) {
+                localStorage.removeItem(`newMember:${selectedCustomer.id}`);
+              }
+            } catch (_) {}
+            setIsNewMember(false);
+          }
+        } else {
+          toast.error(result.error || "Save failed");
         }
-      } else {
-        toast.error(result.error || "Save failed");
+      } catch (parseErr) {
+        console.error("Invalid JSON from server:", text);
+        // Even if JSON is invalid, use the local data but log it
+        console.log("Using local orderData due to JSON error:", orderData);
+        setSavedOrderData(orderData);
+        setCurrentStep(4);
+        toast.warning("Saved locally but server returned invalid JSON");
       }
-    } catch (parseErr) {
-      console.error("Invalid JSON from server:", text);
-      // Even if JSON is invalid, use the local data but log it
-      console.log('Using local orderData due to JSON error:', orderData);
-      setSavedOrderData(orderData);
-      setCurrentStep(4);
-      toast.warning("Saved locally but server returned invalid JSON");
+    } catch (err) {
+      console.error("Save failed", err);
+      toast.error("Network error occurred");
     }
-  } catch (err) {
-    console.error("Save failed", err);
-    toast.error("Network error occurred");
-  }
-};
+  };
 
   // Add these helper functions
   const calculateTotalOriginalPrice = (services) => {
@@ -1026,18 +1031,18 @@ const membershipReductionUsed =
   };
 
   const filteredCategories = serviceCategories.filter((category) => {
-  const query = searchQuery.toLowerCase();
+    const query = searchQuery.toLowerCase();
 
-  // Match category name
-  const matchesCategory = category.name.toLowerCase().includes(query);
+    // Match category name
+    const matchesCategory = category.name.toLowerCase().includes(query);
 
-  // Match any service name within the category
-  const matchesService = category.services?.some((service) =>
-    service.name.toLowerCase().includes(query)
-  );
+    // Match any service name within the category
+    const matchesService = category.services?.some((service) =>
+      service.name.toLowerCase().includes(query)
+    );
 
-  return matchesCategory || matchesService;
-});
+    return matchesCategory || matchesService;
+  });
 
   const handleNewCustomerChange = (e) => {
     const { name, value } = e.target;
@@ -1076,7 +1081,10 @@ const membershipReductionUsed =
           {/* Search for Mobile (hidden on desktop) */}
           <div className="px-4 mb-4 w-full lg:hidden">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-emerald-300" size={18} />
+              <Search
+                className="absolute left-3 top-1/2 transform -translate-y-1/2 text-emerald-300"
+                size={18}
+              />
               <input
                 type="text"
                 placeholder="Search menu..."
@@ -1092,13 +1100,15 @@ const membershipReductionUsed =
               <Link href="/home2" passHref>
                 <Menu.Button
                   as="div"
-                  className={`w-full p-3 rounded-lg text-left flex items-center cursor-pointer transition-all ${router.pathname === '/home' ? 'bg-emerald-600 shadow-md' : 'hover:bg-emerald-600/70'}`}
+                  className={`w-full p-3 rounded-lg text-left flex items-center cursor-pointer transition-all ${router.pathname === "/home" ? "bg-emerald-600 shadow-md" : "hover:bg-emerald-600/70"}`}
                 >
-                  <div className={`p-1.5 mr-3 rounded-lg ${router.pathname === '/home' ? 'bg-white text-emerald-700' : 'bg-emerald-900/30 text-white'}`}>
+                  <div
+                    className={`p-1.5 mr-3 rounded-lg ${router.pathname === "/home" ? "bg-white text-emerald-700" : "bg-emerald-900/30 text-white"}`}
+                  >
                     <Home size={18} />
                   </div>
                   <span>Dashboard</span>
-                  {router.pathname === '/home2' && (
+                  {router.pathname === "/home2" && (
                     <motion.div
                       className="ml-auto w-2 h-2 bg-white rounded-full"
                       initial={{ scale: 0 }}
@@ -1114,10 +1124,12 @@ const membershipReductionUsed =
               {({ open }) => (
                 <>
                   <Menu.Button
-                    className={`w-full p-3 rounded-lg text-left flex items-center justify-between transition-all ${open ? 'bg-emerald-600' : 'hover:bg-emerald-600/70'}`}
+                    className={`w-full p-3 rounded-lg text-left flex items-center justify-between transition-all ${open ? "bg-emerald-600" : "hover:bg-emerald-600/70"}`}
                   >
                     <div className="flex items-center">
-                      <div className={`p-1.5 mr-3 rounded-lg ${open ? 'bg-white text-emerald-700' : 'bg-emerald-900/30 text-white'}`}>
+                      <div
+                        className={`p-1.5 mr-3 rounded-lg ${open ? "bg-white text-emerald-700" : "bg-emerald-900/30 text-white"}`}
+                      >
                         <Layers size={18} />
                       </div>
                       <span>Services</span>
@@ -1143,10 +1155,28 @@ const membershipReductionUsed =
                         className="mt-1 ml-3 w-full bg-emerald-700/90 text-white rounded-lg shadow-lg overflow-hidden"
                       >
                         {[
-                          { href: "/servicess2", label: "All Services", icon: <Layers size={16} /> },
-                          { href: "/membership2", label: "Memberships", icon: <UserPlus size={16} />, badge: 3 },
-                          { href: "/items2", label: "Beauty Deals", icon: <Tag size={16} />, badge: 'New' },
-                          { href: "/serviceorder2", label: "Service Acquire", icon: <ClipboardList size={16} /> },
+                          {
+                            href: "/servicess2",
+                            label: "All Services",
+                            icon: <Layers size={16} />,
+                          },
+                          {
+                            href: "/membership2",
+                            label: "Memberships",
+                            icon: <UserPlus size={16} />,
+                            badge: 3,
+                          },
+                          {
+                            href: "/items2",
+                            label: "Beauty Deals",
+                            icon: <Tag size={16} />,
+                            badge: "New",
+                          },
+                          {
+                            href: "/serviceorder2",
+                            label: "Service Acquire",
+                            icon: <ClipboardList size={16} />,
+                          },
                         ].map((link, index) => (
                           <Menu.Item key={link.href}>
                             {({ active }) => (
@@ -1157,16 +1187,20 @@ const membershipReductionUsed =
                               >
                                 <Link
                                   href={link.href}
-                                  className={`flex items-center justify-between space-x-3 p-3 ${active ? 'bg-emerald-600' : ''} ${router.pathname === link.href ? 'bg-emerald-600 font-medium' : ''}`}
+                                  className={`flex items-center justify-between space-x-3 p-3 ${active ? "bg-emerald-600" : ""} ${router.pathname === link.href ? "bg-emerald-600 font-medium" : ""}`}
                                 >
                                   <div className="flex items-center">
-                                    <span className={`mr-3 ${router.pathname === link.href ? 'text-white' : 'text-emerald-300'}`}>
+                                    <span
+                                      className={`mr-3 ${router.pathname === link.href ? "text-white" : "text-emerald-300"}`}
+                                    >
                                       {link.icon}
                                     </span>
                                     <span>{link.label}</span>
                                   </div>
                                   {link.badge && (
-                                    <span className={`text-xs px-2 py-0.5 rounded-full ${typeof link.badge === 'number' ? 'bg-amber-500' : 'bg-emerald-500'}`}>
+                                    <span
+                                      className={`text-xs px-2 py-0.5 rounded-full ${typeof link.badge === "number" ? "bg-amber-500" : "bg-emerald-500"}`}
+                                    >
                                       {link.badge}
                                     </span>
                                   )}
@@ -1187,10 +1221,12 @@ const membershipReductionUsed =
               {({ open }) => (
                 <>
                   <Menu.Button
-                    className={`w-full p-3 rounded-lg text-left flex items-center justify-between transition-all ${open ? 'bg-emerald-600' : 'hover:bg-emerald-600/70'}`}
+                    className={`w-full p-3 rounded-lg text-left flex items-center justify-between transition-all ${open ? "bg-emerald-600" : "hover:bg-emerald-600/70"}`}
                   >
                     <div className="flex items-center">
-                      <div className={`p-1.5 mr-3 rounded-lg ${open ? 'bg-white text-emerald-700' : 'bg-emerald-900/30 text-white'}`}>
+                      <div
+                        className={`p-1.5 mr-3 rounded-lg ${open ? "bg-white text-emerald-700" : "bg-emerald-900/30 text-white"}`}
+                      >
                         <BarChart2 size={18} />
                       </div>
                       <span>Sales</span>
@@ -1216,8 +1252,16 @@ const membershipReductionUsed =
                         className="mt-1 ml-3 w-full bg-emerald-700/90 text-white rounded-lg shadow-lg overflow-hidden"
                       >
                         {[
-                          { href: "/customers2", label: "Customers", icon: <Users size={16} />, },
-                          { href: "/invoices2", label: "Invoices", icon: <FileText size={16} />, },
+                          {
+                            href: "/customers2",
+                            label: "Customers",
+                            icon: <Users size={16} />,
+                          },
+                          {
+                            href: "/invoices2",
+                            label: "Invoices",
+                            icon: <FileText size={16} />,
+                          },
                         ].map((link, index) => (
                           <Menu.Item key={link.href}>
                             {({ active }) => (
@@ -1228,10 +1272,12 @@ const membershipReductionUsed =
                               >
                                 <Link
                                   href={link.href}
-                                  className={`flex items-center justify-between space-x-3 p-3 ${active ? 'bg-emerald-600' : ''} ${router.pathname === link.href ? 'bg-emerald-600 font-medium' : ''}`}
+                                  className={`flex items-center justify-between space-x-3 p-3 ${active ? "bg-emerald-600" : ""} ${router.pathname === link.href ? "bg-emerald-600 font-medium" : ""}`}
                                 >
                                   <div className="flex items-center">
-                                    <span className={`mr-3 ${router.pathname === link.href ? 'text-white' : 'text-emerald-300'}`}>
+                                    <span
+                                      className={`mr-3 ${router.pathname === link.href ? "text-white" : "text-emerald-300"}`}
+                                    >
                                       {link.icon}
                                     </span>
                                     <span>{link.label}</span>
@@ -1272,7 +1318,8 @@ const membershipReductionUsed =
                     <p className="text-xs text-emerald-300">Receptionist</p>
                   </div>
                 </div>
-                <button className="text-emerald-300 hover:text-white transition-colors"
+                <button
+                  className="text-emerald-300 hover:text-white transition-colors"
                   onClick={handleLogout}
                 >
                   <LogOut size={18} />
@@ -1602,14 +1649,14 @@ const membershipReductionUsed =
                       Service Categories
                     </h2>
                     <div className="mb-4">
-  <input
-    type="text"
-    placeholder="Search categories or services..."
-    value={searchQuery}
-    onChange={(e) => setSearchQuery(e.target.value)}
-    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-  />
-</div>
+                      <input
+                        type="text"
+                        placeholder="Search categories or services..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                      />
+                    </div>
                     <div className="space-y-2 max-h-[500px] overflow-y-auto">
                       {filteredCategories.map((category) => (
                         <motion.button
@@ -1732,167 +1779,188 @@ const membershipReductionUsed =
                 {/* Selected Services & Summary */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                   {/* Selected Services */}
-<div className="lg:col-span-2 bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-  {/* Header */}
-  <div className="flex justify-between items-center mb-4">
-    <h2 className="font-semibold text-gray-900 flex items-center text-lg">
-      <ShoppingCart className="mr-2" size={20} />
-      Selected Services
-      <span className="ml-2 bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-sm">
-        {selectedServices.length}
-      </span>
-    </h2>
-    {selectedServices.length > 0 && (
-      <button
-        onClick={() => {
-          setSelectedServices([]);
-          setSelectedPromoServices({});
-          setPromoApplied(null);
-          toast.info("All selected services cleared");
-        }}
-        className="text-sm text-red-600 hover:text-red-800 flex items-center transition-colors"
-      >
-        <Trash2 className="mr-1" size={16} />
-        Clear All
-      </button>
-    )}
-  </div>
+                  <div className="lg:col-span-2 bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                    {/* Header */}
+                    <div className="flex justify-between items-center mb-4">
+                      <h2 className="font-semibold text-gray-900 flex items-center text-lg">
+                        <ShoppingCart className="mr-2" size={20} />
+                        Selected Services
+                        <span className="ml-2 bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-sm">
+                          {selectedServices.length}
+                        </span>
+                      </h2>
+                      {selectedServices.length > 0 && (
+                        <button
+                          onClick={() => {
+                            setSelectedServices([]);
+                            setSelectedPromoServices({});
+                            setPromoApplied(null);
+                            toast.info("All selected services cleared");
+                          }}
+                          className="text-sm text-red-600 hover:text-red-800 flex items-center transition-colors"
+                        >
+                          <Trash2 className="mr-1" size={16} />
+                          Clear All
+                        </button>
+                      )}
+                    </div>
 
-  {/* Scrollable list */}
-  <div className="max-h-96 overflow-y-auto space-y-3 pr-2">
-    {selectedServices.length === 0 ? (
-      <div className="text-center py-8 text-gray-500">
-        <ShoppingCart size={48} className="mx-auto mb-3 text-gray-300" />
-        <p>No services selected yet</p>
-        <p className="text-sm mt-1">
-          Choose services from the list or browse promos
-        </p>
-      </div>
-    ) : (
-      // Ensure deduplication by service ID + bundleId
-      [...new Map(
-        selectedServices.map((s) => [s.id + (s.bundleId || ""), s])
-      ).values()].map((service, index) => (
-        <motion.div
-          key={`${service.id}-${index}`}
-          className="grid grid-cols-[auto_1fr_auto_auto] items-center gap-4 p-4 bg-white rounded-lg border border-gray-200 hover:border-blue-200 transition-colors"
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, x: 10 }}
-          transition={{ delay: index * 0.05 }}
-        >
-          {/* Remove button */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
+                    {/* Scrollable list */}
+                    <div className="max-h-96 overflow-y-auto space-y-3 pr-2">
+                      {selectedServices.length === 0 ? (
+                        <div className="text-center py-8 text-gray-500">
+                          <ShoppingCart
+                            size={48}
+                            className="mx-auto mb-3 text-gray-300"
+                          />
+                          <p>No services selected yet</p>
+                          <p className="text-sm mt-1">
+                            Choose services from the list or browse promos
+                          </p>
+                        </div>
+                      ) : (
+                        // Ensure deduplication by service ID + bundleId
+                        [
+                          ...new Map(
+                            selectedServices.map((s) => [
+                              s.id + (s.bundleId || ""),
+                              s,
+                            ])
+                          ).values(),
+                        ].map((service, index) => (
+                          <motion.div
+                            key={`${service.id}-${index}`}
+                            className="grid grid-cols-[auto_1fr_auto_auto] items-center gap-4 p-4 bg-white rounded-lg border border-gray-200 hover:border-blue-200 transition-colors"
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, x: 10 }}
+                            transition={{ delay: index * 0.05 }}
+                          >
+                            {/* Remove button */}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
 
-              if (service.isFromBundle && service.bundleId) {
-                // Remove all services from the same bundle
-                setSelectedServices((prev) =>
-                  prev.filter((s) => s.bundleId !== service.bundleId)
-                );
-                toast.info(`"${service.bundleName}" bundle removed from cart`);
-              } else {
-                // Remove single service
-                removeService(service.id);
+                                if (service.isFromBundle && service.bundleId) {
+                                  // Remove all services from the same bundle
+                                  setSelectedServices((prev) =>
+                                    prev.filter(
+                                      (s) => s.bundleId !== service.bundleId
+                                    )
+                                  );
+                                  toast.info(
+                                    `"${service.bundleName}" bundle removed from cart`
+                                  );
+                                } else {
+                                  // Remove single service
+                                  removeService(service.id);
 
-                // Also remove from selectedPromoServices if it's from a promo
-                if (service.isFromPromo && service.promoId) {
-                  setSelectedPromoServices((prev) => ({
-                    ...prev,
-                    [service.promoId]: {
-                      ...prev[service.promoId],
-                      [service.id]: false,
-                    },
-                  }));
-                }
-              }
-            }}
-            className="text-red-500 hover:text-red-700 transition-colors p-1 rounded"
-          >
-            <X size={18} />
-          </button>
+                                  // Also remove from selectedPromoServices if it's from a promo
+                                  if (service.isFromPromo && service.promoId) {
+                                    setSelectedPromoServices((prev) => ({
+                                      ...prev,
+                                      [service.promoId]: {
+                                        ...prev[service.promoId],
+                                        [service.id]: false,
+                                      },
+                                    }));
+                                  }
+                                }
+                              }}
+                              className="text-red-500 hover:text-red-700 transition-colors p-1 rounded"
+                            >
+                              <X size={18} />
+                            </button>
 
-          {/* Service info */}
-          <div className="min-w-0">
-            <p className="font-medium text-gray-900 truncate">
-              {service.name}
-            </p>
-            <div className="flex items-center space-x-2 mt-1">
-              <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                {serviceCategories.find((cat) =>
-                  cat.services.some((s) => s.id === service.id)
-                )?.name || "General"}
-              </span>
-              {service.isFromPromo && (
-                <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                  Promo Discount
-                </span>
-              )}
-              {service.isFromBundle && (
-                <span className="text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded">
-                  Bundle
-                </span>
-              )}
-            </div>
-          </div>
+                            {/* Service info */}
+                            <div className="min-w-0">
+                              <p className="font-medium text-gray-900 truncate">
+                                {service.name}
+                              </p>
+                              <div className="flex items-center space-x-2 mt-1">
+                                <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                                  {serviceCategories.find((cat) =>
+                                    cat.services.some(
+                                      (s) => s.id === service.id
+                                    )
+                                  )?.name || "General"}
+                                </span>
+                                {service.isFromPromo && (
+                                  <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                                    Promo Discount
+                                  </span>
+                                )}
+                                {service.isFromBundle && (
+                                  <span className="text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded">
+                                    Bundle
+                                  </span>
+                                )}
+                              </div>
+                            </div>
 
-          {/* Quantity controls — hide for bundle services */}
-          {!service.isFromBundle && (
-            <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-1">
-              <button
-                onClick={() =>
-                  updateQuantity(service.id, service.quantity - 1)
-                }
-                className="w-8 h-8 flex items-center justify-center bg-white border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={service.quantity === 1}
-              >
-                -
-              </button>
-              <span className="w-8 text-center font-medium text-gray-900">
-                {service.quantity}
-              </span>
-              <button
-                onClick={() =>
-                  updateQuantity(service.id, service.quantity + 1)
-                }
-                className="w-8 h-8 flex items-center justify-center bg-white border border-gray-300 rounded hover:bg-gray-100"
-              >
-                +
-              </button>
-            </div>
-          )}
+                            {/* Quantity controls — hide for bundle services */}
+                            {!service.isFromBundle && (
+                              <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-1">
+                                <button
+                                  onClick={() =>
+                                    updateQuantity(
+                                      service.id,
+                                      service.quantity - 1
+                                    )
+                                  }
+                                  className="w-8 h-8 flex items-center justify-center bg-white border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                                  disabled={service.quantity === 1}
+                                >
+                                  -
+                                </button>
+                                <span className="w-8 text-center font-medium text-gray-900">
+                                  {service.quantity}
+                                </span>
+                                <button
+                                  onClick={() =>
+                                    updateQuantity(
+                                      service.id,
+                                      service.quantity + 1
+                                    )
+                                  }
+                                  className="w-8 h-8 flex items-center justify-center bg-white border border-gray-300 rounded hover:bg-gray-100"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            )}
 
-          {/* Price */}
-          <div className="text-right min-w-24">
-            <div className="font-bold text-gray-900">
-              ₱
-              {(
-                (service.isFromBundle ? service.price : service.price * service.quantity)
-              ).toLocaleString("en-PH", {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}
-            </div>
-            {service.originalPrice &&
-              service.originalPrice > service.price && (
-                <div className="text-xs text-gray-500 line-through">
-                  ₱
-                  {(
-                    (service.isFromBundle ? service.originalPrice : service.originalPrice * service.quantity)
-                  ).toLocaleString("en-PH", {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
-                </div>
-              )}
-          </div>
-        </motion.div>
-      ))
-    )}
-  </div>
-</div>
-
+                            {/* Price */}
+                            <div className="text-right min-w-24">
+                              <div className="font-bold text-gray-900">
+                                ₱
+                                {(service.isFromBundle
+                                  ? service.price
+                                  : service.price * service.quantity
+                                ).toLocaleString("en-PH", {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}
+                              </div>
+                              {service.originalPrice &&
+                                service.originalPrice > service.price && (
+                                  <div className="text-xs text-gray-500 line-through">
+                                    ₱
+                                    {(service.isFromBundle
+                                      ? service.originalPrice
+                                      : service.originalPrice * service.quantity
+                                    ).toLocaleString("en-PH", {
+                                      minimumFractionDigits: 2,
+                                      maximumFractionDigits: 2,
+                                    })}
+                                  </div>
+                                )}
+                            </div>
+                          </motion.div>
+                        ))
+                      )}
+                    </div>
+                  </div>
 
                   {/* Order Summary */}
                   <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
@@ -1959,12 +2027,11 @@ const membershipReductionUsed =
                           <span>Total:</span>
                           <span>
                             {formatCurrency(
-  calculatedSubtotal -
-    promoReduction -
-    discountReduction -
-    membershipReductionUsed
-)}
-
+                              calculatedSubtotal -
+                                promoReduction -
+                                discountReduction -
+                                membershipReductionUsed
+                            )}
                           </span>
                         </div>
                       </div>
@@ -2087,26 +2154,35 @@ const membershipReductionUsed =
                                 </div>
 
                                 {/* 🔍 Search Bar */}
-<div className="mb-4">
-  <input
-    type="text"
-    placeholder="Search promotions..."
-    value={promoSearch}
-    onChange={(e) => setPromoSearch(e.target.value)}
-    className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-700"
-  />
-</div>
-
+                                <div className="mb-4">
+                                  <input
+                                    type="text"
+                                    placeholder="Search promotions..."
+                                    value={promoSearch}
+                                    onChange={(e) =>
+                                      setPromoSearch(e.target.value)
+                                    }
+                                    className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-700"
+                                  />
+                                </div>
 
                                 <div className="grid gap-6 max-h-[70vh] overflow-y-auto pr-2">
                                   {promos
                                     .filter(
-  (p) =>
-    p.status === "active" &&
-    (!promoSearch ||
-      p.name.toLowerCase().includes(promoSearch.toLowerCase()) ||
-      p.description?.toLowerCase().includes(promoSearch.toLowerCase()))
-)
+                                      (p) =>
+                                        p.status === "active" &&
+                                        (!promoSearch ||
+                                          p.name
+                                            .toLowerCase()
+                                            .includes(
+                                              promoSearch.toLowerCase()
+                                            ) ||
+                                          p.description
+                                            ?.toLowerCase()
+                                            .includes(
+                                              promoSearch.toLowerCase()
+                                            ))
+                                    )
 
                                     .map((promo) => (
                                       <motion.div
@@ -2431,26 +2507,35 @@ const membershipReductionUsed =
                                 </div>
 
                                 {/* 🔍 Search Bar */}
-<div className="mb-4">
-  <input
-    type="text"
-    placeholder="Search Bundles..."
-    value={bundleSearch}
-    onChange={(e) => setBundleSearch(e.target.value)}
-    className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-700"
-  />
-</div>
-
+                                <div className="mb-4">
+                                  <input
+                                    type="text"
+                                    placeholder="Search Bundles..."
+                                    value={bundleSearch}
+                                    onChange={(e) =>
+                                      setBundleSearch(e.target.value)
+                                    }
+                                    className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-700"
+                                  />
+                                </div>
 
                                 <div className="grid gap-6 max-h-[70vh] overflow-y-auto pr-2">
                                   {bundles
                                     .filter(
-  (p) =>
-    p.status === "active" &&
-    (!bundleSearch ||
-      p.name.toLowerCase().includes(bundleSearch.toLowerCase()) ||
-      p.description?.toLowerCase().includes(bundleSearch.toLowerCase()))
-)
+                                      (p) =>
+                                        p.status === "active" &&
+                                        (!bundleSearch ||
+                                          p.name
+                                            .toLowerCase()
+                                            .includes(
+                                              bundleSearch.toLowerCase()
+                                            ) ||
+                                          p.description
+                                            ?.toLowerCase()
+                                            .includes(
+                                              bundleSearch.toLowerCase()
+                                            ))
+                                    )
 
                                     .map((bundle) => (
                                       <motion.div
@@ -2706,27 +2791,39 @@ const membershipReductionUsed =
                         <span className="font-medium">{customerName}</span>
                       </div>
                       {isMember && (
-  <>
-    <div className="flex justify-between">
-      <span className="text-gray-600">Membership Type:</span>
-      <span className="font-medium">{membershipType}</span>
-    </div>
-    {membershipBalanceDeduction > 0 && (
-      <div className="flex justify-between text-sm">
-        <span className="text-gray-600">Balance Deduction:</span>
-        <span className="font-medium text-red-600">
-          -₱{membershipBalanceDeduction.toLocaleString()}
-        </span>
-      </div>
-    )}
-    <div className="flex justify-between text-sm font-semibold border-t pt-2">
-      <span className="text-gray-700">New Balance After Purchase:</span>
-      <span className="text-emerald-600">
-        ₱{Math.max(0, membershipBalance - membershipBalanceDeduction).toLocaleString()}
-      </span>
-    </div>
-  </>
-)}
+                        <>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">
+                              Membership Type:
+                            </span>
+                            <span className="font-medium">
+                              {membershipType}
+                            </span>
+                          </div>
+                          {membershipBalanceDeduction > 0 && (
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-600">
+                                Balance Deduction:
+                              </span>
+                              <span className="font-medium text-red-600">
+                                -₱{membershipBalanceDeduction.toLocaleString()}
+                              </span>
+                            </div>
+                          )}
+                          <div className="flex justify-between text-sm font-semibold border-t pt-2">
+                            <span className="text-gray-700">
+                              New Balance After Purchase:
+                            </span>
+                            <span className="text-emerald-600">
+                              ₱
+                              {Math.max(
+                                0,
+                                membershipBalance - membershipBalanceDeduction
+                              ).toLocaleString()}
+                            </span>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
 
@@ -2776,26 +2873,29 @@ const membershipReductionUsed =
                       )}
 
                       {/* Membership */}
-{isMember && useMembership && (
-  <>
-    {/* Show 50% discount for regular members */}
-    {!isNewMember && membershipDiscountAmount > 0 && (
-      <div className="flex justify-between text-emerald-600">
-        <span>Membership Discount (50%):</span>
-        <span>-{formatCurrency(membershipDiscountAmount)}</span>
-      </div>
-    )}
-    
-    {/* Show balance deduction for new members with balance */}
-    {isNewMember && membershipBalanceDeduction > 0 && (
-      <div className="flex justify-between text-emerald-600">
-        <span>Membership Balance Used:</span>
-        <span>-{formatCurrency(membershipBalanceDeduction)}</span>
-      </div>
-    )}
-  </>
-)}
-                      
+                      {isMember && useMembership && (
+                        <>
+                          {/* Show 50% discount for regular members */}
+                          {!isNewMember && membershipDiscountAmount > 0 && (
+                            <div className="flex justify-between text-emerald-600">
+                              <span>Membership Discount (50%):</span>
+                              <span>
+                                -{formatCurrency(membershipDiscountAmount)}
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Show balance deduction for new members with balance */}
+                          {isNewMember && membershipBalanceDeduction > 0 && (
+                            <div className="flex justify-between text-emerald-600">
+                              <span>Membership Balance Used:</span>
+                              <span>
+                                -{formatCurrency(membershipBalanceDeduction)}
+                              </span>
+                            </div>
+                          )}
+                        </>
+                      )}
 
                       {/* Total */}
                       <div className="border-t pt-3 mt-3">
@@ -2803,11 +2903,11 @@ const membershipReductionUsed =
                           <span>Total:</span>
                           <span>
                             {formatCurrency(
-  calculatedSubtotal -
-    promoReduction -
-    discountReduction -
-    membershipReductionUsed
-)}
+                              calculatedSubtotal -
+                                promoReduction -
+                                discountReduction -
+                                membershipReductionUsed
+                            )}
                           </span>
                         </div>
                       </div>
@@ -3070,22 +3170,25 @@ const membershipReductionUsed =
                       )}
 
                       {/* Membership */}
-{(savedOrderData.membershipDiscount ?? 0) > 0 && (
-  <div className="flex justify-between text-emerald-600">
-    <span>Membership Discount (50%):</span>
-    <span className="tabular-nums">
-      -{formatCurrency(savedOrderData.membershipDiscount)}
-    </span>
-  </div>
-)}
-{(savedOrderData.membershipBalanceDeduction ?? 0) > 0 && (
-  <div className="flex justify-between text-emerald-600">
-    <span>Membership Balance Used:</span>
-    <span className="tabular-nums">
-      -{formatCurrency(savedOrderData.membershipBalanceDeduction)}
-    </span>
-  </div>
-)}
+                      {(savedOrderData.membershipDiscount ?? 0) > 0 && (
+                        <div className="flex justify-between text-emerald-600">
+                          <span>Membership Discount (50%):</span>
+                          <span className="tabular-nums">
+                            -{formatCurrency(savedOrderData.membershipDiscount)}
+                          </span>
+                        </div>
+                      )}
+                      {(savedOrderData.membershipBalanceDeduction ?? 0) > 0 && (
+                        <div className="flex justify-between text-emerald-600">
+                          <span>Membership Balance Used:</span>
+                          <span className="tabular-nums">
+                            -
+                            {formatCurrency(
+                              savedOrderData.membershipBalanceDeduction
+                            )}
+                          </span>
+                        </div>
+                      )}
 
                       {/* Total */}
                       <div className="border-t pt-3 mt-3">
@@ -3837,12 +3940,19 @@ const membershipReductionUsed =
                       </button>
                     </div>
 
-                    <form onSubmit={(e) => { e.preventDefault(); handleMembershipUpgrade(); }} className="flex-1 overflow-y-auto">
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        handleMembershipUpgrade();
+                      }}
+                      className="flex-1 overflow-y-auto"
+                    >
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         {/* Membership Type */}
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Membership Type <span className="text-red-500">*</span>
+                            Membership Type{" "}
+                            <span className="text-red-500">*</span>
                           </label>
                           <select
                             value={upgradeMembershipForm.type}
@@ -3901,7 +4011,8 @@ const membershipReductionUsed =
                         {/* Payment Method */}
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Payment Method <span className="text-red-500">*</span>
+                            Payment Method{" "}
+                            <span className="text-red-500">*</span>
                           </label>
                           <select
                             value={upgradeMembershipForm.paymentMethod || ""}
