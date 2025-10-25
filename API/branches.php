@@ -209,25 +209,22 @@ function getBranchesData($pdo)
         b.name, 
         b.color_code AS colorCode, 
         b.address, 
-        b.contact_number AS contactNumber, 
-        u.user_id, 
-        u.name AS user_name, 
-        u.email AS user_email
+        b.contact_number AS contactNumber,
+        (SELECT COUNT(*) FROM users WHERE branch_id = b.id) AS user_count,
+        (SELECT COUNT(*) FROM employees WHERE branch_id = b.id) AS employees
     FROM branches b
-LEFT JOIN users u ON u.branch_id = b.id
-
-";
+    ORDER BY b.name
+    ";
+    
     $stmt = $pdo->query($query);
-
 
     $result = [];
     while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
         // Only add dummy data if fields are NULL
         $row['address'] = $row['address'] ?? 'Not available';
         $row['contactNumber'] = $row['contactNumber'] ?? 'Not available';
-        $row['user_id'] = $row['user_id'] ?? 'Not assigned';
-        $row['user_id'] = $row['user_id'] ?? null; // keep it null, not "Not assigned"
-        $row['employees'] = 0;
+        $row['user_count'] = (int)$row['user_count'];
+        $row['employees'] = (int)$row['employees'];
         $result[] = $row;
     }
 
@@ -249,17 +246,12 @@ function handleGetBranch($pdo, $branchId)
         b.name, 
         b.color_code AS colorCode, 
         b.address, 
-        b.contact_number AS contactNumber, 
-        u.user_id, 
-        u.name AS user_name, 
-        u.email AS user_email,
-        (SELECT COUNT(*) FROM users WHERE branch_id = b.id) AS users,
+        b.contact_number AS contactNumber,
+        (SELECT COUNT(*) FROM users WHERE branch_id = b.id) AS user_count,
         (SELECT COUNT(*) FROM employees WHERE branch_id = b.id) AS employees
     FROM branches b
-LEFT JOIN users u ON u.branch_id = b.id
-WHERE b.id = ?
-
-");
+    WHERE b.id = ?
+    ");
 
     $stmt->execute([$branchId]);
     $branch = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -268,7 +260,8 @@ WHERE b.id = ?
         // Only set defaults if fields are NULL
         $branch['address'] = $branch['address'] ?? 'Not available';
         $branch['contactNumber'] = $branch['contactNumber'] ?? 'Not available';
-        $branch['user_id'] = $branch['user_id'] ?? null;
+        $branch['user_count'] = (int)$branch['user_count'];
+        $branch['employees'] = (int)$branch['employees'];
         echo json_encode($branch);
     } else {
         http_response_code(404);

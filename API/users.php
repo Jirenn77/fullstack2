@@ -73,45 +73,56 @@ function handleLogin($pdo)
 {
     $data = json_decode(file_get_contents('php://input'), true);
 
-    if (empty($data['email']) || empty($data['password'])) {
+    if (empty($data['identifier']) || empty($data['password'])) {
         echo json_encode(['error' => 'Missing parameters']);
         return;
     }
 
-    $email = trim($data['email']);
+    $identifier = trim($data['identifier']);
     $password = trim($data['password']);
     $requestedBranchId = isset($data['branch_id']) ? (int)$data['branch_id'] : null;
 
-    $stmt = $pdo->prepare("SELECT u.*, b.name AS branch_name FROM users u LEFT JOIN branches b ON u.branch_id = b.id WHERE u.email = ?");
-    $stmt->execute([$email]);
+    // Check if identifier is email or username with case-sensitive comparison
+    if (filter_var($identifier, FILTER_VALIDATE_EMAIL)) {
+        // It's an email - search by email with case-sensitive comparison
+        $stmt = $pdo->prepare("SELECT u.*, b.name AS branch_name FROM users u LEFT JOIN branches b ON u.branch_id = b.id WHERE BINARY u.email = ?");
+    } else {
+        // It's a username - search by username with case-sensitive comparison  
+        $stmt = $pdo->prepare("SELECT u.*, b.name AS branch_name FROM users u LEFT JOIN branches b ON u.branch_id = b.id WHERE BINARY u.username = ?");
+    }
+    
+    $stmt->execute([$identifier]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    if ($user && $password === $user['password']) {
-        // Enforce branch assignment if a branch_id is provided by the client
-        if ($requestedBranchId !== null && (int)$user['branch_id'] !== $requestedBranchId) {
-            echo json_encode(['error' => 'User not assigned to this branch', 'code' => 'BRANCH_MISMATCH']);
+    if ($user) {
+        // Use case-sensitive comparison for password
+        if ($password === $user['password']) {
+            // Enforce branch assignment if a branch_id is provided by the client
+            if ($requestedBranchId !== null && (int)$user['branch_id'] !== $requestedBranchId) {
+                echo json_encode(['error' => 'User not assigned to this branch', 'code' => 'BRANCH_MISMATCH']);
+                return;
+            }
+
+            $_SESSION['user_id'] = $user['user_id'];
+            if (!empty($user['branch_id'])) {
+                $_SESSION['branch_id'] = (int)$user['branch_id'];
+            }
+
+            unset($user['password']);
+            echo json_encode([
+                'success' => true,
+                'branch' => $user['branch'] ?? $user['branch_name'] ?? null,
+                'branch_id' => isset($user['branch_id']) ? (int)$user['branch_id'] : null,
+                'branch_name' => $user['branch_name'] ?? null,
+                'redirect' => '/home2',
+                'role' => $user['role'],
+                'user' => $user
+            ]);
             return;
         }
-
-        $_SESSION['user_id'] = $user['user_id'];
-        if (!empty($user['branch_id'])) {
-            $_SESSION['branch_id'] = (int)$user['branch_id'];
-        }
-
-        unset($user['password']);
-        echo json_encode([
-            'success' => true,
-            'branch' => $user['branch'] ?? $user['branch_name'] ?? null,
-            'branch_id' => isset($user['branch_id']) ? (int)$user['branch_id'] : null,
-            'branch_name' => $user['branch_name'] ?? null,
-            'redirect' => '/home2',
-            'role' => $user['role'],
-            'user' => $user
-        ]);
-        return;
     }
 
-    echo json_encode(['error' => 'Invalid email or password']);
+    echo json_encode(['error' => 'Invalid email/username or password']);
 }
 
 // ===== LOGOUT FUNCTION =====
@@ -315,19 +326,30 @@ function handleUpdateUser($pdo, $id, $data)
         }
 
         if (isset($data['password']) && !empty($data['password'])) {
-            // ⚠️ Password is not hashed since you mentioned no hashing needed
             $fields[] = 'password = :password';
             $params[':password'] = $data['password'];
         }
 
-        if (isset($data['branch'])) {
-            $fields[] = 'branch = :branch';
-            $params[':branch'] = $data['branch'];
-        }
-
+        // Handle branch_id update - this is crucial
         if (isset($data['branch_id'])) {
             $fields[] = 'branch_id = :branch_id';
-            $params[':branch_id'] = $data['branch_id'];
+            $params[':branch_id'] = !empty($data['branch_id']) ? $data['branch_id'] : null;
+            
+            // Also update the legacy branch field for consistency
+            if (!empty($data['branch_id'])) {
+                // Get branch name from branches table
+                $branchStmt = $pdo->prepare("SELECT name FROM branches WHERE id = ?");
+                $branchStmt->execute([$data['branch_id']]);
+                $branch = $branchStmt->fetch(PDO::FETCH_ASSOC);
+                
+                if ($branch) {
+                    $fields[] = 'branch = :branch';
+                    $params[':branch'] = $branch['name'];
+                }
+            } else {
+                $fields[] = 'branch = :branch';
+                $params[':branch'] = null;
+            }
         }
 
         if (isset($data['status'])) {
@@ -351,8 +373,32 @@ function handleUpdateUser($pdo, $id, $data)
         $stmt = $pdo->prepare($sql);
         $stmt->execute($params);
 
-        if ($stmt->rowCount() >= 0) {
-            echo json_encode(['message' => 'User updated successfully']);
+        if ($stmt->rowCount() > 0) {
+            // Return updated user data including branch info
+            $updatedStmt = $pdo->prepare("
+                SELECT 
+                    u.user_id as id,
+                    u.name,
+                    u.username,
+                    u.email,
+                    u.branch_id,
+                    b.name as branchName,
+                    u.status,
+                    u.role
+                FROM users u
+                LEFT JOIN branches b ON u.branch_id = b.id
+                WHERE u.user_id = ?
+            ");
+            $updatedStmt->execute([$id]);
+            $updatedUser = $updatedStmt->fetch(PDO::FETCH_ASSOC);
+            
+            echo json_encode([
+                'success' => true,
+                'message' => 'User updated successfully',
+                'user' => $updatedUser
+            ]);
+        } else {
+            echo json_encode(['message' => 'No changes made or user not found']);
         }
     } catch (PDOException $e) {
         http_response_code(500);

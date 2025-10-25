@@ -72,14 +72,15 @@ function login($pdo)
         $email = trim($data['email']);
         $password = trim($data['password']);
 
-        // Check in the admin table ONLY
-        $stmt = $pdo->prepare("SELECT * FROM admin WHERE email = ?");
+        // Check in the admin table ONLY with case-sensitive comparison
+        $stmt = $pdo->prepare("SELECT * FROM admin WHERE BINARY email = ?");
         $stmt->execute([$email]);
         $admin = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if ($admin) {
             error_log('Admin found: ' . json_encode($admin));
-            if ($password === trim($admin['password'])) { // direct comparison, trimmed
+            // Use case-sensitive comparison for password too
+            if ($password === $admin['password']) {
                 $_SESSION['admin_id'] = $admin['admin_id'];
                 unset($admin['password']);
                 $admin['role'] = $admin['role'] ?: 'admin'; // default if null

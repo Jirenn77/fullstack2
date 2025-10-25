@@ -233,63 +233,85 @@ try {
     // Fetch promos and discounts
     if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         // Fetch promos
-        $promoStmt = $pdo->query("SELECT promo_id, type, name, description, valid_from, valid_to, status, discount_type, discount_value FROM promos");
-        $promos = $promoStmt->fetchAll(PDO::FETCH_ASSOC);
+$promoStmt = $pdo->query("SELECT promo_id, type, name, description, valid_from, valid_to, status, discount_type, discount_value FROM promos");
+$promos = $promoStmt->fetchAll(PDO::FETCH_ASSOC);
 
-        foreach ($promos as &$promo) {
-            $promo['id'] = $promo['promo_id'];
+foreach ($promos as &$promo) {
+    $promo['id'] = $promo['promo_id'];
 
-            $promo['validFrom'] = !empty($promo['valid_from'])
-                ? date("Y-m-d", strtotime($promo['valid_from']))
-                : null;
+    $promo['validFrom'] = !empty($promo['valid_from'])
+        ? date("Y-m-d", strtotime($promo['valid_from']))
+        : null;
 
-            $promo['validTo'] = !empty($promo['valid_to'])
-                ? date("Y-m-d", strtotime($promo['valid_to']))
-                : null;
+    $promo['validTo'] = !empty($promo['valid_to'])
+        ? date("Y-m-d", strtotime($promo['valid_to']))
+        : null;
 
-            $promo['discountType'] = $promo['discount_type'];
-            $promo['discountValue'] = $promo['discount_value'];
+    $promo['discountType'] = $promo['discount_type'];
+    $promo['discountValue'] = $promo['discount_value'];
 
-            // ✅ FETCH ASSOCIATED SERVICES FOR THIS PROMO
-            $servicesStmt = $pdo->prepare("
-            SELECT s.service_id, s.name, s.category, s.price, s.duration
-            FROM services s
-            INNER JOIN promo_services ps ON s.service_id = ps.service_id
-            WHERE ps.promo_id = ?
-        ");
-            $servicesStmt->execute([$promo['promo_id']]);
-            $promo['services'] = $servicesStmt->fetchAll(PDO::FETCH_ASSOC);
+    // ✅ Calculate status based on current date vs valid dates
+    $currentDate = date('Y-m-d');
+    $validFrom = $promo['validFrom'];
+    $validTo = $promo['validTo'];
+    
+    if ($validFrom && $validTo) {
+        $promo['status'] = ($currentDate >= $validFrom && $currentDate <= $validTo) ? 'active' : 'inactive';
+    } else {
+        $promo['status'] = 'inactive'; // If dates are missing, mark as inactive
+    }
 
-            unset(
-                $promo['valid_from'],
-                $promo['valid_to'],
-                $promo['promo_id'],
-                $promo['discount_type'],
-                $promo['discount_value']
-            );
-        }
+    // ✅ FETCH ASSOCIATED SERVICES FOR THIS PROMO
+    $servicesStmt = $pdo->prepare("
+        SELECT s.service_id, s.name, s.category, s.price, s.duration
+        FROM services s
+        INNER JOIN promo_services ps ON s.service_id = ps.service_id
+        WHERE ps.promo_id = ?
+    ");
+    $servicesStmt->execute([$promo['promo_id']]);
+    $promo['services'] = $servicesStmt->fetchAll(PDO::FETCH_ASSOC);
+
+    unset(
+        $promo['valid_from'],
+        $promo['valid_to'],
+        $promo['promo_id'],
+        $promo['discount_type'],
+        $promo['discount_value']
+    );
+}
 
         // Fetch discounts
-        $discountStmt = $pdo->query("SELECT discount_id, name, description, valid_from, valid_to, discount_type, value, status FROM discounts");
-        $discounts = $discountStmt->fetchAll(PDO::FETCH_ASSOC);
+$discountStmt = $pdo->query("SELECT discount_id, name, description, valid_from, valid_to, discount_type, value, status FROM discounts");
+$discounts = $discountStmt->fetchAll(PDO::FETCH_ASSOC);
 
-        foreach ($discounts as &$discount) {
-            $discount['id'] = $discount['discount_id'];
-            $discount['validFrom'] = !empty($discount['valid_from']) ? date("Y-m-d", strtotime($discount['valid_from'])) : null;
-            $discount['validTo'] = !empty($discount['valid_to']) ? date("Y-m-d", strtotime($discount['valid_to'])) : null;
+foreach ($discounts as &$discount) {
+    $discount['id'] = $discount['discount_id'];
+    $discount['validFrom'] = !empty($discount['valid_from']) ? date("Y-m-d", strtotime($discount['valid_from'])) : null;
+    $discount['validTo'] = !empty($discount['valid_to']) ? date("Y-m-d", strtotime($discount['valid_to'])) : null;
 
-            // ✅ Fetch services (if any)
-            $servicesStmt = $pdo->prepare("
+    // ✅ Calculate status based on current date vs valid dates
+    $currentDate = date('Y-m-d');
+    $validFrom = $discount['validFrom'];
+    $validTo = $discount['validTo'];
+    
+    if ($validFrom && $validTo) {
+        $discount['status'] = ($currentDate >= $validFrom && $currentDate <= $validTo) ? 'active' : 'inactive';
+    } else {
+        $discount['status'] = 'inactive'; // If dates are missing, mark as inactive
+    }
+
+    // ✅ Fetch services (if any)
+    $servicesStmt = $pdo->prepare("
         SELECT s.service_id, s.name, s.category, s.price, s.duration
         FROM services s
         INNER JOIN service_group_mappings sgm ON s.service_id = sgm.service_id
         WHERE sgm.group_id = ?
     ");
-            $servicesStmt->execute([$discount['discount_id']]);
-            $discount['services'] = $servicesStmt->fetchAll(PDO::FETCH_ASSOC);
+    $servicesStmt->execute([$discount['discount_id']]);
+    $discount['services'] = $servicesStmt->fetchAll(PDO::FETCH_ASSOC);
 
-            unset($discount['discount_id'], $discount['valid_from'], $discount['valid_to']);
-        }
+    unset($discount['discount_id'], $discount['valid_from'], $discount['valid_to']);
+}
 
 
         echo json_encode([

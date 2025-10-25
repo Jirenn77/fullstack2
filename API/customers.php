@@ -115,118 +115,132 @@ try {
 
 
     // -------------------- GET SINGLE CUSTOMER --------------------
-    if (isset($_GET['customerId'])) {
-        $customerId = $_GET['customerId'];
+if (isset($_GET['customerId'])) {
+    $customerId = $_GET['customerId'];
 
-        $stmt = $pdo->prepare("SELECT * FROM customers WHERE id = ?");
-        $stmt->execute([$customerId]);
-        $customer = $stmt->fetch(PDO::FETCH_ASSOC);
+    $stmt = $pdo->prepare("SELECT * FROM customers WHERE id = ?");
+    $stmt->execute([$customerId]);
+    $customer = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        if (!$customer) {
-            http_response_code(404);
-            echo json_encode(['error' => 'Customer not found']);
-            exit;
-        }
-
-        if (!empty($customer['birthday'])) {
-            $customer['birthday'] = date("F d, Y", strtotime($customer['birthday']));
-        }
-
-        $stmtMem = $pdo->prepare("
-    SELECT type, coverage, remaining_balance, date_registered, expire_date
-    FROM memberships
-    WHERE customer_id = ?
-    ORDER BY date_registered DESC, id DESC
-    LIMIT 1
-");
-$stmtMem->execute([$customer['id']]); // for list loop, or [$customerId] for single customer
-$membership = $stmtMem->fetch(PDO::FETCH_ASSOC);
-
-
-
-        if ($membership) {
-            $customer['membership'] = $membership['type'];
-            $customer['membershipDetails'] = [
-                'coverage' => $membership['coverage'],
-                'remainingBalance' => $membership['remaining_balance'],
-                'dateRegistered' => $membership['date_registered'],
-                'expireDate' => $membership['expire_date']
-            ];
-        } else {
-            $customer['membership'] = "None";
-            $customer['membershipDetails'] = null;
-        }
-
-        $stmtTrans = $pdo->prepare("SELECT invoice_number, invoice_date, GROUP_CONCAT(s.name SEPARATOR ', ') as services, SUM(i.total_price) as amount, i.status FROM invoices i JOIN services s ON i.service_id = s.service_id WHERE i.customer_id = ? GROUP BY invoice_number ORDER BY invoice_date DESC LIMIT 10");
-        $stmtTrans->execute([$customerId]);
-        $transactions = $stmtTrans->fetchAll(PDO::FETCH_ASSOC);
-
-        foreach ($transactions as &$t) {
-            $t['date'] = date("M d, Y", strtotime($t['invoice_date']));
-            $t['service'] = $t['services'];
-            $t['amount'] = (float) $t['amount'];
-            $t['status'] = $t['status'];
-            unset($t['invoice_date'], $t['services']);
-        }
-
-        $customer['transactions'] = $transactions;
-        echo json_encode($customer);
+    if (!$customer) {
+        http_response_code(404);
+        echo json_encode(['error' => 'Customer not found']);
         exit;
     }
 
-
-    // -------------------- LIST CUSTOMERS --------------------
-    $filter = $_GET['filter'] ?? 'all';
-    $stmt = $pdo->prepare("SELECT * FROM customers ORDER BY id");
-    $stmt->execute();
-    $customers = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    $filtered = [];
-
-    foreach ($customers as &$customer) {
-        $stmtMem = $pdo->prepare("SELECT type, coverage, remaining_balance, date_registered, expire_date FROM memberships WHERE customer_id = ?");
-        $stmtMem->execute([$customer['id']]);
-        $membership = $stmtMem->fetch(PDO::FETCH_ASSOC);
-
-        if ($membership) {
-            $customer['membershipDetails'] = [
-                'coverage' => $membership['coverage'],
-                'remainingBalance' => $membership['remaining_balance'],
-                'dateRegistered' => $membership['date_registered'],
-                'expireDate' => $membership['expire_date']
-            ];
-            $customer['membership_status'] = $membership['type'];
-        } else {
-            $customer['membership_status'] = 'None';
-        }
-
-        if ($filter === 'member' && $customer['membership_status'] === 'None')
-            continue;
-        if ($filter === 'nonMember' && $customer['membership_status'] !== 'None')
-            continue;
-
-        $stmtTrans = $pdo->prepare("SELECT invoice_number, invoice_date, GROUP_CONCAT(s.name SEPARATOR ', ') as services, SUM(i.total_price) as amount, i.status FROM invoices i JOIN services s ON i.service_id = s.service_id WHERE i.customer_id = ? GROUP BY invoice_number ORDER BY invoice_date DESC LIMIT 10");
-        $stmtTrans->execute([$customer['id']]);
-        $transactions = $stmtTrans->fetchAll(PDO::FETCH_ASSOC);
-
-        foreach ($transactions as &$t) {
-            $t['date'] = date("M d, Y", strtotime($t['invoice_date']));
-            $t['service'] = $t['services'];
-            $t['amount'] = (float) $t['amount'];
-            $t['status'] = $t['status'];
-            unset($t['invoice_date'], $t['services']);
-        }
-
-        $customer['transactions'] = $transactions;
-
-        if (!empty($customer['birthday'])) {
-            $customer['birthday'] = date("F d, Y", strtotime($customer['birthday']));
-        }
-
-        $filtered[] = $customer;
+    if (!empty($customer['birthday'])) {
+        $customer['birthday'] = date("F d, Y", strtotime($customer['birthday']));
     }
 
-    echo json_encode(array_values($filtered));
+    // UPDATED: Join with membership table to get the name
+    $stmtMem = $pdo->prepare("
+        SELECT m.type, m.coverage, m.remaining_balance, m.date_registered, m.expire_date, 
+               mem.name as membership_name
+        FROM memberships m
+        LEFT JOIN membership mem ON m.type = mem.type AND m.coverage = mem.consumable_amount
+        WHERE m.customer_id = ?
+        ORDER BY m.date_registered DESC, m.id DESC
+        LIMIT 1
+    ");
+    $stmtMem->execute([$customer['id']]);
+    $membership = $stmtMem->fetch(PDO::FETCH_ASSOC);
+
+    if ($membership) {
+        $customer['membership'] = $membership['type'];
+        $customer['membershipDetails'] = [
+            'coverage' => $membership['coverage'],
+            'remainingBalance' => $membership['remaining_balance'],
+            'dateRegistered' => $membership['date_registered'],
+            'expireDate' => $membership['expire_date'],
+            'expire_date' => $membership['expire_date'],
+            'membershipName' => $membership['membership_name'] // Add this line
+        ];
+    } else {
+        $customer['membership'] = "None";
+        $customer['membershipDetails'] = null;
+    }
+
+    // ... rest of your code remains the same
+    $stmtTrans = $pdo->prepare("SELECT invoice_number, invoice_date, GROUP_CONCAT(s.name SEPARATOR ', ') as services, SUM(i.total_price) as amount, i.status FROM invoices i JOIN services s ON i.service_id = s.service_id WHERE i.customer_id = ? GROUP BY invoice_number ORDER BY invoice_date DESC LIMIT 10");
+    $stmtTrans->execute([$customerId]);
+    $transactions = $stmtTrans->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($transactions as &$t) {
+        $t['date'] = date("M d, Y", strtotime($t['invoice_date']));
+        $t['service'] = $t['services'];
+        $t['amount'] = (float) $t['amount'];
+        $t['status'] = $t['status'];
+        unset($t['invoice_date'], $t['services']);
+    }
+
+    $customer['transactions'] = $transactions;
+    echo json_encode($customer);
+    exit;
+}
+
+
+    // -------------------- LIST CUSTOMERS --------------------
+$filter = $_GET['filter'] ?? 'all';
+$stmt = $pdo->prepare("SELECT * FROM customers ORDER BY id");
+$stmt->execute();
+$customers = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+$filtered = [];
+
+foreach ($customers as &$customer) {
+    // UPDATED: Join with membership table to get the name
+    $stmtMem = $pdo->prepare("
+        SELECT m.type, m.coverage, m.remaining_balance, m.date_registered, m.expire_date, 
+               mem.name as membership_name
+        FROM memberships m
+        LEFT JOIN membership mem ON m.type = mem.type AND m.coverage = mem.consumable_amount
+        WHERE m.customer_id = ?
+    ");
+    $stmtMem->execute([$customer['id']]);
+    $membership = $stmtMem->fetch(PDO::FETCH_ASSOC);
+
+    if ($membership) {
+        $customer['membershipDetails'] = [
+            'coverage' => $membership['coverage'],
+            'remainingBalance' => $membership['remaining_balance'],
+            'dateRegistered' => $membership['date_registered'],
+            'expireDate' => $membership['expire_date'],
+            'expire_date' => $membership['expire_date'],
+            'membershipName' => $membership['membership_name'] // Add this line
+        ];
+        $customer['membership_status'] = $membership['type'];
+    } else {
+        $customer['membership_status'] = 'None';
+    }
+
+    // ... rest of your code remains the same
+    if ($filter === 'member' && $customer['membership_status'] === 'None')
+        continue;
+    if ($filter === 'nonMember' && $customer['membership_status'] !== 'None')
+        continue;
+
+    $stmtTrans = $pdo->prepare("SELECT invoice_number, invoice_date, GROUP_CONCAT(s.name SEPARATOR ', ') as services, SUM(i.total_price) as amount, i.status FROM invoices i JOIN services s ON i.service_id = s.service_id WHERE i.customer_id = ? GROUP BY invoice_number ORDER BY invoice_date DESC LIMIT 10");
+    $stmtTrans->execute([$customer['id']]);
+    $transactions = $stmtTrans->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($transactions as &$t) {
+        $t['date'] = date("M d, Y", strtotime($t['invoice_date']));
+        $t['service'] = $t['services'];
+        $t['amount'] = (float) $t['amount'];
+        $t['status'] = $t['status'];
+        unset($t['invoice_date'], $t['services']);
+    }
+
+    $customer['transactions'] = $transactions;
+
+    if (!empty($customer['birthday'])) {
+        $customer['birthday'] = date("F d, Y", strtotime($customer['birthday']));
+    }
+
+    $filtered[] = $customer;
+}
+
+echo json_encode(array_values($filtered));
 
 } catch (PDOException $e) {
     http_response_code(500);

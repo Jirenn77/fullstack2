@@ -4,9 +4,10 @@ ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 
 header("Content-Type: application/json");
-header("Access-Control-Allow-Origin: *");
+header("Access-Control-Allow-Origin: http://localhost:3000");
 header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type");
+header("Access-Control-Allow-Credentials: true");
 
 require_once 'db.php';
 
@@ -22,9 +23,10 @@ try {
 
     // ✅ Handle invoice fetching (GET)
     if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-        $branchFilter = $_GET['branch'] ?? null;
+        $branchFilter = isset($_GET['branch']) ? $_GET['branch'] : null;
 
-        // First, let's use a simpler query to see what tables and data we have
+        error_log("Fetching invoices with branch filter: " . $branchFilter);
+
         $query = "
         SELECT 
             i.invoice_number,
@@ -59,6 +61,8 @@ try {
 
         $stmt->execute();
         $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        error_log("Found " . count($result) . " invoices");
 
         if (!$result) {
             echo json_encode([]);
@@ -118,12 +122,18 @@ try {
             $invoice['membershipBalanceDeduction'] = 0;
         }
 
+        error_log("Returning " . count($invoices) . " formatted invoices");
         echo json_encode($invoices);
         exit;
     }
 
 } catch (PDOException $e) {
+    error_log("Database error in getInvoices.php: " . $e->getMessage());
     http_response_code(500);
     echo json_encode(['error' => 'Database error: ' . $e->getMessage()]);
-    error_log("Database error in getInvoices.php: " . $e->getMessage());
+} catch (Exception $e) {
+    error_log("General error in getInvoices.php: " . $e->getMessage());
+    http_response_code(500);
+    echo json_encode(['error' => 'Server error: ' . $e->getMessage()]);
 }
+?>
