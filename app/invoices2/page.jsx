@@ -4,7 +4,6 @@ import React from "react";
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-
 import { Toaster, toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import { Menu } from "@headlessui/react";
@@ -111,30 +110,30 @@ export default function InvoicesPage() {
   const [invoicesPerPage] = useState(10);
 
   useEffect(() => {
-    // Fetch current user data (including branch info)
-    // const fetchCurrentUser = async () => {
-    //   try {
-    //     const response = await fetch(
-    //       "http://localhost/API/branches.php?action=user",
-    //       {
-    //         headers: { "Content-Type": "application/json" },
-    //         credentials: "include", // important if you use session
-    //       }
-    //     );
+    // Fetch current user data (with branch info)
+    const fetchCurrentUser = async () => {
+      try {
+        const response = await fetch(
+          "http://localhost/API/branches.php?action=user",
+          {
+            headers: { "Content-Type": "application/json" },
+            credentials: "include", // important if you use session-based auth
+          }
+        );
 
-    //     const userData = await response.json();
-    //     setCurrentUser(userData);
+        const userData = await response.json();
+        setCurrentUser(userData);
 
-    //     // ✅ Update this to branch_id or branch_name based on what you use
-    //     if (userData.branch_name) {
-    //       setSelectedBranch(userData.branch_name); // or branch_id if you're filtering by ID
-    //     }
-    //   } catch (error) {
-    //     console.error("Failed to fetch user data:", error);
-    //   }
-    // };
+        // Use branch_id instead of branch_name for filtering
+        if (userData.branch_id) {
+          setSelectedBranch(userData.branch_id);
+        }
+      } catch (error) {
+        console.error("Failed to fetch user data:", error);
+      }
+    };
 
-    // Fetch branches data
+    // Fetch all branches
     const fetchBranches = async () => {
       try {
         const response = await fetch(
@@ -147,178 +146,71 @@ export default function InvoicesPage() {
       }
     };
 
-    // fetchCurrentUser();
+    fetchCurrentUser();
     fetchBranches();
   }, []);
 
-  useEffect(() => {
-    const fetchInvoices = async () => {
-      try {
-        setIsLoading(true);
-        setError(null);
-        const response = await fetch(
-          `http://localhost/API/getInvoices.php?branch=${selectedBranch}`,
-          {
-            headers: {
-              "Content-Type": "application/json",
-            },
-          }
-        );
-
-        if (!response.ok) {
-          throw new Error(`Server responded with status ${response.status}`);
-        }
-
-        const result = await response.json();
-        setInvoices(result);
-        setFilteredInvoices(result);
-      } catch (error) {
-        console.error("Failed to fetch invoices:", error);
-        setError(error.message);
-        toast.error(`Failed to load invoices: ${error.message}`);
-
-        // Fallback to mock data if API fails (remove in production)
-        const mockData = [
-          {
-            id: 1,
-            name: "Sample Customer",
-            invoiceNumber: "000001",
-            dateIssued: "Feb 26, 2025",
-            totalAmount: "₱150.00",
-            paymentStatus: "Paid",
-            services: [{ name: "Sample Service", price: "₱150.00" }],
-            branch: "Main",
-            handledBy: "Admin",
-          },
-        ];
-        setInvoices(mockData);
-        setFilteredInvoices(mockData);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchInvoices();
-  }, [selectedBranch]);
 
   useEffect(() => {
-    const fetchInvoices = async () => {
-      try {
-        setIsLoading(true);
-        setError(null);
-        const response = await fetch("http://localhost/API/getInvoices.php", {
-          headers: {
-            "Content-Type": "application/json",
-          },
-        });
+  const fetchInvoices = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      // Get user data from localStorage
+      const userData = JSON.parse(localStorage.getItem("user") || "{}");
+      const userBranchName = userData.branch_name || userData.branch;
+      const userRole = userData.role;
 
-        if (!response.ok) {
-          throw new Error(`Server responded with status ${response.status}`);
-        }
-
-        const result = await response.json();
-
-        // No need to transform data since API already provides the correct format
-        setInvoices(result);
-        setFilteredInvoices(result);
-      } catch (error) {
-        console.error("Failed to fetch invoices:", error);
-        setError(error.message);
-        toast.error(`Failed to load invoices: ${error.message}`);
-
-        // Fallback to mock data if API fails (remove in production)
-        const mockData = [
-          {
-            id: 1,
-            name: "Sample Customer",
-            invoiceNumber: "000001",
-            dateIssued: "Feb 26, 2025",
-            totalAmount: "₱150.00",
-            paymentStatus: "Paid",
-            services: [{ name: "Sample Service", price: "₱150.00" }],
-          },
-        ];
-        setInvoices(mockData);
-        setFilteredInvoices(mockData);
-      } finally {
-        setIsLoading(false);
+      let url = "http://localhost/API/getInvoices.php";
+      
+      // Always filter by branch for both receptionist and admin
+      if (userBranchName) {
+        url += `?branch=${encodeURIComponent(userBranchName)}`;
       }
-    };
 
-    fetchInvoices();
-  }, []);
+      const response = await fetch(url, {
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
 
-  const handlePrintInvoice = (invoice) => {
-      const doc = new jsPDF();
-  
-      // Peso formatting
-      const formatPeso = (value) => {
-        const number = Number(String(value).replace(/[^0-9.-]+/g, ""));
-        return "PHP " + number.toLocaleString("en-PH", {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        });
-      };
-  
-      // Header - Clinic Info
-      doc.setFontSize(18);
-      doc.text("Lizly Skin Care Clinic", 105, 15, { align: "center" });
-      doc.setFontSize(10);
-      doc.text("Condoy Building Room 201, Pabayo Gomez Street, CDO", 105, 21, {
-        align: "center",
-      });
-      doc.text("Phone: (09) 123-4567 | Email: lizlyskincare@gmail.com", 105, 26, {
-        align: "center",
-      });
-  
-      // Invoice Info
-      doc.setFontSize(14);
-      doc.text(`Invoice #${invoice.invoiceNumber}`, 14, 45);
-      doc.setFontSize(11);
-  
-      const issueDate = new Date(invoice.dateIssued);
-      doc.text(`Issued: ${issueDate.toLocaleString()}`, 14, 52);
-  
-      // Customer Only
-      doc.text(`Customer: ${invoice.name}`, 14, 62);
-  
-      // Services Table
-      autoTable(doc, {
-        startY: 75,
-        head: [["Service", "Price"]],
-        body: invoice.services.map((service) => [
-          service.name,
-          formatPeso(service.price),
-        ]),
-        theme: "striped",
-        headStyles: { fillColor: [41, 128, 185], textColor: 255 },
-        columnStyles: { 0: { halign: "left" }, 1: { halign: "right" } },
-        bodyStyles: { fontSize: 11 },
-      });
-  
-      // Total Amount Box
-      const finalY = doc.lastAutoTable.finalY + 10;
-      doc.setFillColor(240, 240, 240);
-      doc.roundedRect(14, finalY, 180, 12, 3, 3, "F");
-  
-      doc.setFontSize(12);
-      doc.setFont(undefined, "bold");
-      doc.text("Total Amount", 20, finalY + 8);
-      doc.text(formatPeso(invoice.totalAmount), 190, finalY + 8, {
-        align: "right",
-      });
-  
-      // Footer
-      const pageHeight = doc.internal.pageSize.height;
-      doc.setFontSize(10);
-      doc.setFont(undefined, "normal");
-      doc.text("Thank you for your business!", 105, pageHeight - 15, {
-        align: "center",
-      });
-  
-      // Open invoice
-      doc.output("dataurlnewwindow");
-    };
+      if (!response.ok) {
+        throw new Error(`Server responded with status ${response.status}`);
+      }
+
+      const result = await response.json();
+      setInvoices(result);
+      setFilteredInvoices(result);
+    } catch (error) {
+      console.error("Failed to fetch invoices:", error);
+      setError(error.message);
+      toast.error(`Failed to load invoices: ${error.message}`);
+      
+      // Fallback to mock data
+      const userData = JSON.parse(localStorage.getItem("user") || "{}");
+      const userBranchName = userData.branch_name || userData.branch;
+      
+      const mockData = [
+        {
+          invoiceNumber: "000001",
+          name: "Sample Customer",
+          dateIssued: "Feb 26, 2025",
+          totalAmount: "₱150.00",
+          paymentStatus: "Paid",
+          services: [{ name: "Sample Service", price: "₱150.00" }],
+          branch: userBranchName || "Main",
+        },
+      ];
+      setInvoices(mockData);
+      setFilteredInvoices(mockData);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  fetchInvoices();
+}, []);
 
   useEffect(() => {
     if (searchQuery.trim() === "") {
@@ -332,6 +224,78 @@ export default function InvoicesPage() {
       setFilteredInvoices(filtered);
     }
   }, [searchQuery, invoices]);
+
+  const handlePrintInvoice = (invoice) => {
+    const doc = new jsPDF();
+
+    // Peso formatting
+    const formatPeso = (value) => {
+      const number = Number(String(value).replace(/[^0-9.-]+/g, ""));
+      return "PHP " + number.toLocaleString("en-PH", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+    };
+
+    // Header - Clinic Info
+    doc.setFontSize(18);
+    doc.text("Lizly Skin Care Clinic", 105, 15, { align: "center" });
+    doc.setFontSize(10);
+    doc.text("Condoy Building Room 201, Pabayo Gomez Street, CDO", 105, 21, {
+      align: "center",
+    });
+    doc.text("Phone: (09) 123-4567 | Email: lizlyskincare@gmail.com", 105, 26, {
+      align: "center",
+    });
+
+    // Invoice Info
+    doc.setFontSize(14);
+    doc.text(`Invoice #${invoice.invoiceNumber}`, 14, 45);
+    doc.setFontSize(11);
+
+    const issueDate = new Date(invoice.dateIssued);
+    doc.text(`Issued: ${issueDate.toLocaleString()}`, 14, 52);
+
+    // Customer Only
+    doc.text(`Customer: ${invoice.name}`, 14, 62);
+
+    // Services Table
+    autoTable(doc, {
+      startY: 75,
+      head: [["Service", "Price"]],
+      body: invoice.services.map((service) => [
+        service.name,
+        formatPeso(service.price),
+      ]),
+      theme: "striped",
+      headStyles: { fillColor: [41, 128, 185], textColor: 255 },
+      columnStyles: { 0: { halign: "left" }, 1: { halign: "right" } },
+      bodyStyles: { fontSize: 11 },
+    });
+
+    // Total Amount Box
+    const finalY = doc.lastAutoTable.finalY + 10;
+    doc.setFillColor(240, 240, 240);
+    doc.roundedRect(14, finalY, 180, 12, 3, 3, "F");
+
+    doc.setFontSize(12);
+    doc.setFont(undefined, "bold");
+    doc.text("Total Amount", 20, finalY + 8);
+    doc.text(formatPeso(invoice.totalAmount), 190, finalY + 8, {
+      align: "right",
+    });
+
+    // Footer
+    const pageHeight = doc.internal.pageSize.height;
+    doc.setFontSize(10);
+    doc.setFont(undefined, "normal");
+    doc.text("Thank you for your business!", 105, pageHeight - 15, {
+      align: "center",
+    });
+
+    // Open invoice
+    doc.output("dataurlnewwindow");
+  };
 
   const prepareChartData = () => {
     const now = new Date();
@@ -702,12 +666,6 @@ export default function InvoicesPage() {
                 >
                   <User size={16} /> Profile
                 </Link>
-                <Link
-                  href="/roles"
-                  className="flex items-center gap-3 px-4 py-3 hover:bg-gray-100 w-full text-gray-700"
-                >
-                  <Settings size={16} /> Settings
-                </Link>
                 <button
                   className="flex items-center gap-3 px-4 py-3 hover:bg-red-50 w-full text-red-500"
                   onClick={handleLogout}
@@ -757,7 +715,7 @@ export default function InvoicesPage() {
           <div className="w-full px-4 space-y-1 overflow-y-auto flex-grow custom-scrollbar">
             {/* Dashboard */}
             <Menu as="div" className="relative w-full">
-              <Link href="/home" passHref>
+              <Link href="/home2" passHref>
                 <Menu.Button
                   as="div"
                   className={`w-full p-3 rounded-lg text-left flex items-center cursor-pointer transition-all ${router.pathname === "/home" ? "bg-emerald-600 shadow-md" : "hover:bg-emerald-600/70"}`}
@@ -978,7 +936,10 @@ export default function InvoicesPage() {
                     <p className="text-xs text-emerald-300">Receptionist</p>
                   </div>
                 </div>
-                <button className="text-emerald-300 hover:text-white transition-colors">
+                <button
+                  className="text-emerald-300 hover:text-white transition-colors"
+                  onClick={handleLogout}
+                >
                   <LogOut size={18} />
                 </button>
               </div>
@@ -993,524 +954,592 @@ export default function InvoicesPage() {
         </nav>
 
         <main className="flex-1 p-6 bg-gray-50 ml-64">
-        
+     
           {/* Invoices View */}
-                    {activeView === "invoices" && (
-                      <motion.div
-                        initial={{ opacity: 0, y: -20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.3 }}
-                        className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"
-                      >
-                        {/* Header */}
-                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
-                          <div>
-                            <h1 className="text-2xl font-bold text-gray-800">
-                              Invoices
-                            </h1>
-                            <p className="text-sm text-gray-500 mt-1">
-                              View and monitor all customer invoices
+          {activeView === "invoices" && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"
+            >
+              {/* Header */}
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
+                <div>
+        <h1 className="text-2xl font-bold text-gray-800">
+          Invoice Management
+        </h1>
+        <p className="text-sm text-gray-500 mt-1">
+          {currentUser?.branch_name ? 
+            `Viewing invoices from ${currentUser.branch_name} branch` : 
+            'View and manage all customer invoices'
+          }
+        </p>
+      </div>
+
+                <div className="flex flex-col sm:flex-row gap-3 mt-4 md:mt-0">
+                  <motion.button
+                    onClick={() => filterInvoicesByPeriod("week")}
+                    className="px-3 py-1 bg-orange-200 hover:bg-orange-300 text-orange-700 rounded-lg text-sm"
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    This Week
+                  </motion.button>
+                  <motion.button
+                    onClick={() => filterInvoicesByPeriod("month")}
+                    className="px-3 py-1 bg-green-100 hover:bg-green-200 text-green-700 rounded-lg text-sm"
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    This Month
+                  </motion.button>
+                  <motion.button
+                    onClick={() => filterInvoicesByPeriod("year")}
+                    className="px-3 py-1 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-lg text-sm"
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    This Year
+                  </motion.button>
+                  <div className="relative">
+                    <DatePicker
+                      selected={selectedDate}
+                      onChange={(date) => filterInvoicesByCustomDate(date)}
+                      placeholderText="Select date"
+                      className="border border-gray-300 rounded-lg px-3 py-1 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                      dateFormat="MMM d, yyyy"
+                    />
+                    <Calendar
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+                      size={16}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {isLoading ? (
+                <div className="flex justify-center items-center h-64">
+                  <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-emerald-500"></div>
+                </div>
+              ) : error ? (
+                <div className="bg-red-50 border border-red-200 p-4 rounded-lg">
+                  <div className="flex items-center">
+                    <AlertCircle className="text-red-500 mr-2" size={18} />
+                    <h3 className="text-red-800 font-medium">
+                      Error Loading Invoices
+                    </h3>
+                  </div>
+                  <p className="text-red-700 text-sm mt-1">{error}</p>
+                  <button
+                    onClick={() => window.location.reload()}
+                    className="mt-3 px-3 py-1 bg-red-100 hover:bg-red-200 text-red-800 rounded-lg text-sm"
+                  >
+                    Try Again
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col lg:flex-row gap-6">
+                  {/* Invoice Table */}
+                  <div className={`${selectedInvoice ? "lg:w-2/3" : "w-full"}`}>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Invoice #
+                            </th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Customer
+                            </th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Date
+                            </th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Amount
+                            </th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Status
+                            </th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Actions
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {currentInvoices.length > 0 ? (
+                            currentInvoices.map((invoice) => (
+                              <motion.tr
+                                key={`invoice-${invoice.invoiceNumber}`}
+                                className={`hover:bg-gray-50 ${selectedInvoice?.invoiceNumber ===
+                                    invoice.invoiceNumber
+                                    ? "bg-emerald-50"
+                                    : ""
+                                  }`}
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                transition={{ duration: 0.2 }}
+                              >
+                                <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
+                                  {invoice.invoiceNumber}
+                                </td>
+                                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                                  {invoice.name}
+                                </td>
+                                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                                  {invoice.dateIssued}
+                                </td>
+                                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                                  {invoice.totalAmount}
+                                </td>
+                                <td className="px-4 py-3 whitespace-nowrap">
+                                  <span
+                                    className={`px-2 py-1 text-xs rounded-full ${invoice.paymentStatus === "Paid"
+                                        ? "bg-green-100 text-green-800"
+                                        : "bg-yellow-100 text-yellow-800"
+                                      }`}
+                                  >
+                                    {invoice.paymentStatus}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                                  <div className="flex space-x-2">
+                                    <motion.button
+                                      onClick={() =>
+                                        setSelectedInvoice(invoice)
+                                      }
+                                      className="text-blue-600 hover:text-blue-800"
+                                      whileHover={{ scale: 1.2 }}
+                                      whileTap={{ scale: 0.9 }}
+                                      title="View Details"
+                                    >
+                                      <Eye size={16} />
+                                    </motion.button>
+                                    <motion.button
+                                      onClick={() =>
+                                        handlePrintInvoice(invoice)
+                                      }
+                                      className="text-gray-600 hover:text-gray-800"
+                                      whileHover={{ scale: 1.2 }}
+                                      whileTap={{ scale: 0.9 }}
+                                      title="Print"
+                                    >
+                                      <Printer size={16} />
+                                    </motion.button>
+                                  </div>
+                                </td>
+                              </motion.tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td
+                                colSpan="6"
+                                className="px-4 py-6 text-center text-gray-500"
+                              >
+                                <div className="flex flex-col items-center justify-center">
+                                  <FileText className="w-12 h-12 text-gray-300 mb-4" />
+                                  <p>No invoices found</p>
+                                  <p className="text-sm mt-1">
+                                    Try adjusting your filters
+                                  </p>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Pagination Controls - Improved Version */}
+                    {filteredInvoices.length > invoicesPerPage && (
+                      <div className="flex items-center justify-between mt-4 px-4 py-3 bg-gray-50 border-t border-gray-200 sm:px-6">
+                        <div className="flex-1 flex flex-col sm:flex-row items-center justify-between gap-4">
+                          {/* Showing X-Y of Z results */}
+                          <div className="text-sm text-gray-700">
+                            <p>
+                              Showing{" "}
+                              <span className="font-medium">
+                                {indexOfFirstInvoice + 1}
+                              </span>{" "}
+                              to{" "}
+                              <span className="font-medium">
+                                {Math.min(
+                                  indexOfLastInvoice,
+                                  filteredInvoices.length
+                                )}
+                              </span>{" "}
+                              of{" "}
+                              <span className="font-medium">
+                                {filteredInvoices.length}
+                              </span>{" "}
+                              results
                             </p>
                           </div>
-          
-                          <div className="flex flex-col sm:flex-row gap-3 mt-4 md:mt-0">
-                            <motion.button
-                              onClick={() => filterInvoicesByPeriod("week")}
-                              className="px-3 py-1 bg-orange-200 hover:bg-orange-300 text-orange-700 rounded-lg text-sm"
-                              whileHover={{ scale: 1.05 }}
-                              whileTap={{ scale: 0.95 }}
-                            >
-                              This Week
-                            </motion.button>
-                            <motion.button
-                              onClick={() => filterInvoicesByPeriod("month")}
-                              className="px-3 py-1 bg-green-100 hover:bg-green-200 text-green-700 rounded-lg text-sm"
-                              whileHover={{ scale: 1.05 }}
-                              whileTap={{ scale: 0.95 }}
-                            >
-                              This Month
-                            </motion.button>
-                            <motion.button
-                              onClick={() => filterInvoicesByPeriod("year")}
-                              className="px-3 py-1 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-lg text-sm"
-                              whileHover={{ scale: 1.05 }}
-                              whileTap={{ scale: 0.95 }}
-                            >
-                              This Year
-                            </motion.button>
-                            <div className="relative">
-                              <DatePicker
-                                selected={selectedDate}
-                                onChange={(date) => filterInvoicesByCustomDate(date)}
-                                placeholderText="Select date"
-                                className="border border-gray-300 rounded-lg px-3 py-1 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-                                dateFormat="MMM d, yyyy"
-                              />
-                              <Calendar
-                                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400"
-                                size={16}
-                              />
-                            </div>
-                          </div>
-                        </div>
-          
-                        {/* Back to Sales button */}
-                        <div className="mb-4">
-                        </div>
-          
-                        {isLoading ? (
-                          <div className="flex justify-center items-center h-64">
-                            <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-emerald-500"></div>
-                          </div>
-                        ) : error ? (
-                          <div className="bg-red-50 border border-red-200 p-4 rounded-lg">
-                            <div className="flex items-center">
-                              <AlertCircle className="text-red-500 mr-2" size={18} />
-                              <h3 className="text-red-800 font-medium">
-                                Error Loading Invoices
-                              </h3>
-                            </div>
-                            <p className="text-red-700 text-sm mt-1">{error}</p>
+
+                          {/* Page Navigation */}
+                          <nav
+                            className="isolate inline-flex -space-x-px rounded-md shadow-sm"
+                            aria-label="Pagination"
+                          >
+                            {/* Previous Button */}
                             <button
-                              onClick={() => window.location.reload()}
-                              className="mt-3 px-3 py-1 bg-red-100 hover:bg-red-200 text-red-800 rounded-lg text-sm"
+                              onClick={() =>
+                                paginate(Math.max(1, currentPage - 1))
+                              }
+                              disabled={currentPage === 1}
+                              className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 focus:z-20 disabled:opacity-50 disabled:cursor-not-allowed"
+                              aria-label="Previous page"
                             >
-                              Try Again
+                              <span className="sr-only">Previous</span>
+                              <ChevronLeft
+                                className="h-5 w-5"
+                                aria-hidden="true"
+                              />
                             </button>
-                          </div>
-                        ) : (
-                          <div className="flex flex-col lg:flex-row gap-6">
-                            {/* Invoice Table */}
-                            <div className={`${selectedInvoice ? "lg:w-2/3" : "w-full"}`}>
-                              <div className="overflow-x-auto">
-                                <table className="min-w-full divide-y divide-gray-200">
-                                  <thead className="bg-gray-50">
-                                    <tr>
-                                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Invoice #
-                                      </th>
-                                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Customer
-                                      </th>
-                                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Date
-                                      </th>
-                                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Amount
-                                      </th>
-                                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Status
-                                      </th>
-                                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Actions
-                                      </th>
-                                    </tr>
-                                  </thead>
-                                  <tbody className="bg-white divide-y divide-gray-200">
-                                    {currentInvoices.length > 0 ? (
-                                      currentInvoices.map((invoice) => (
-                                        <motion.tr
-                                          key={`invoice-${invoice.invoiceNumber}`}
-                                          className={`hover:bg-gray-50 ${selectedInvoice?.invoiceNumber ===
-                                              invoice.invoiceNumber
-                                              ? "bg-emerald-50"
-                                              : ""
-                                            }`}
-                                          initial={{ opacity: 0 }}
-                                          animate={{ opacity: 1 }}
-                                          transition={{ duration: 0.2 }}
-                                        >
-                                          <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
-                                            {invoice.invoiceNumber}
-                                          </td>
-                                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                                            {invoice.name}
-                                          </td>
-                                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                                            {invoice.dateIssued}
-                                          </td>
-                                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                                            {invoice.totalAmount}
-                                          </td>
-                                          <td className="px-4 py-3 whitespace-nowrap">
-                                            <span
-                                              className={`px-2 py-1 text-xs rounded-full ${invoice.paymentStatus === "Paid"
-                                                  ? "bg-green-100 text-green-800"
-                                                  : "bg-yellow-100 text-yellow-800"
-                                                }`}
-                                            >
-                                              {invoice.paymentStatus}
-                                            </span>
-                                          </td>
-                                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                                            <div className="flex space-x-2">
-                                              <motion.button
-                                                onClick={() =>
-                                                  setSelectedInvoice(invoice)
-                                                }
-                                                className="text-blue-600 hover:text-blue-800"
-                                                whileHover={{ scale: 1.2 }}
-                                                whileTap={{ scale: 0.9 }}
-                                                title="View Details"
-                                              >
-                                                <Eye size={16} />
-                                              </motion.button>
-                                              <motion.button
-                                                onClick={() =>
-                                                  handlePrintInvoice(invoice)
-                                                }
-                                                className="text-gray-600 hover:text-gray-800"
-                                                whileHover={{ scale: 1.2 }}
-                                                whileTap={{ scale: 0.9 }}
-                                                title="Print"
-                                              >
-                                                <Printer size={16} />
-                                              </motion.button>
-                                            </div>
-                                          </td>
-                                        </motion.tr>
-                                      ))
-                                    ) : (
-                                      <tr>
-                                        <td
-                                          colSpan="6"
-                                          className="px-4 py-6 text-center text-gray-500"
-                                        >
-                                          <div className="flex flex-col items-center justify-center">
-                                            <FileText className="w-12 h-12 text-gray-300 mb-4" />
-                                            <p>No invoices found</p>
-                                            <p className="text-sm mt-1">
-                                              Try adjusting your filters
-                                            </p>
-                                          </div>
-                                        </td>
-                                      </tr>
-                                    )}
-                                  </tbody>
-                                </table>
-                              </div>
-          
-                              {/* Pagination Controls - Improved Version */}
-                              {filteredInvoices.length > invoicesPerPage && (
-                                <div className="flex items-center justify-between mt-4 px-4 py-3 bg-gray-50 border-t border-gray-200 sm:px-6">
-                                  <div className="flex-1 flex flex-col sm:flex-row items-center justify-between gap-4">
-                                    {/* Showing X-Y of Z results */}
-                                    <div className="text-sm text-gray-700">
-                                      <p>
-                                        Showing{" "}
-                                        <span className="font-medium">
-                                          {indexOfFirstInvoice + 1}
-                                        </span>{" "}
-                                        to{" "}
-                                        <span className="font-medium">
-                                          {Math.min(
-                                            indexOfLastInvoice,
-                                            filteredInvoices.length
-                                          )}
-                                        </span>{" "}
-                                        of{" "}
-                                        <span className="font-medium">
-                                          {filteredInvoices.length}
-                                        </span>{" "}
-                                        results
-                                      </p>
-                                    </div>
-          
-                                    {/* Page Navigation */}
-                                    <nav
-                                      className="isolate inline-flex -space-x-px rounded-md shadow-sm"
-                                      aria-label="Pagination"
-                                    >
-                                      {/* Previous Button */}
+
+                            {/* Page Numbers - Optimized to not show all pages when too many */}
+                            {(() => {
+                              const maxVisiblePages = 5; // Show maximum 5 page buttons
+                              let startPage, endPage;
+
+                              if (totalPages <= maxVisiblePages) {
+                                startPage = 1;
+                                endPage = totalPages;
+                              } else {
+                                const maxPagesBeforeCurrent = Math.floor(
+                                  maxVisiblePages / 2
+                                );
+                                const maxPagesAfterCurrent =
+                                  Math.ceil(maxVisiblePages / 2) - 1;
+
+                                if (currentPage <= maxPagesBeforeCurrent) {
+                                  startPage = 1;
+                                  endPage = maxVisiblePages;
+                                } else if (
+                                  currentPage + maxPagesAfterCurrent >=
+                                  totalPages
+                                ) {
+                                  startPage = totalPages - maxVisiblePages + 1;
+                                  endPage = totalPages;
+                                } else {
+                                  startPage =
+                                    currentPage - maxPagesBeforeCurrent;
+                                  endPage = currentPage + maxPagesAfterCurrent;
+                                }
+                              }
+
+                              return (
+                                <>
+                                  {startPage > 1 && (
+                                    <>
                                       <button
-                                        onClick={() =>
-                                          paginate(Math.max(1, currentPage - 1))
-                                        }
-                                        disabled={currentPage === 1}
-                                        className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 focus:z-20 disabled:opacity-50 disabled:cursor-not-allowed"
-                                        aria-label="Previous page"
+                                        onClick={() => paginate(1)}
+                                        className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${1 === currentPage
+                                            ? "z-10 bg-emerald-50 border-emerald-500 text-emerald-600"
+                                            : "bg-white border-gray-300 text-gray-500 hover:bg-gray-50"
+                                          }`}
+                                        key="page-1"
                                       >
-                                        <span className="sr-only">Previous</span>
-                                        <ChevronLeft
-                                          className="h-5 w-5"
-                                          aria-hidden="true"
-                                        />
+                                        1
                                       </button>
-          
-                                      {/* Page Numbers - Optimized to not show all pages when too many */}
-                                      {(() => {
-                                        const maxVisiblePages = 5; // Show maximum 5 page buttons
-                                        let startPage, endPage;
-          
-                                        if (totalPages <= maxVisiblePages) {
-                                          startPage = 1;
-                                          endPage = totalPages;
-                                        } else {
-                                          const maxPagesBeforeCurrent = Math.floor(
-                                            maxVisiblePages / 2
-                                          );
-                                          const maxPagesAfterCurrent =
-                                            Math.ceil(maxVisiblePages / 2) - 1;
-          
-                                          if (currentPage <= maxPagesBeforeCurrent) {
-                                            startPage = 1;
-                                            endPage = maxVisiblePages;
-                                          } else if (
-                                            currentPage + maxPagesAfterCurrent >=
-                                            totalPages
-                                          ) {
-                                            startPage = totalPages - maxVisiblePages + 1;
-                                            endPage = totalPages;
-                                          } else {
-                                            startPage =
-                                              currentPage - maxPagesBeforeCurrent;
-                                            endPage = currentPage + maxPagesAfterCurrent;
-                                          }
-                                        }
-          
-                                        return (
-                                          <>
-                                            {startPage > 1 && (
-                                              <>
-                                                <button
-                                                  onClick={() => paginate(1)}
-                                                  className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${1 === currentPage
-                                                      ? "z-10 bg-emerald-50 border-emerald-500 text-emerald-600"
-                                                      : "bg-white border-gray-300 text-gray-500 hover:bg-gray-50"
-                                                    }`}
-                                                  key="page-1"
-                                                >
-                                                  1
-                                                </button>
-                                                {startPage > 2 && (
-                                                  <span className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">
-                                                    ...
-                                                  </span>
-                                                )}
-                                              </>
-                                            )}
-          
-                                            {Array.from({
-                                              length: endPage - startPage + 1,
-                                            }).map((_, idx) => {
-                                              const pageNumber = startPage + idx;
-                                              return (
-                                                <button
-                                                  key={`page-${pageNumber}`} // Make sure this is unique
-                                                  onClick={() => paginate(pageNumber)}
-                                                  className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${pageNumber === currentPage
-                                                      ? "z-10 bg-emerald-50 border-emerald-500 text-emerald-600"
-                                                      : "bg-white border-gray-300 text-gray-500 hover:bg-gray-50"
-                                                    }`}
-                                                  aria-current={
-                                                    pageNumber === currentPage
-                                                      ? "page"
-                                                      : undefined
-                                                  }
-                                                >
-                                                  {pageNumber}
-                                                </button>
-                                              );
-                                            })}
-          
-                                            {endPage < totalPages && (
-                                              <>
-                                                {endPage < totalPages - 1 && (
-                                                  <span className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">
-                                                    ...
-                                                  </span>
-                                                )}
-                                                <button
-                                                  onClick={() => paginate(totalPages)}
-                                                  className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${totalPages === currentPage
-                                                      ? "z-10 bg-emerald-50 border-emerald-500 text-emerald-600"
-                                                      : "bg-white border-gray-300 text-gray-500 hover:bg-gray-50"
-                                                    }`}
-                                                  key={`page-${totalPages}`}
-                                                >
-                                                  {totalPages}
-                                                </button>
-                                              </>
-                                            )}
-                                          </>
-                                        );
-                                      })()}
-          
-                                      {/* Next Button */}
+                                      {startPage > 2 && (
+                                        <span className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">
+                                          ...
+                                        </span>
+                                      )}
+                                    </>
+                                  )}
+
+                                  {Array.from({
+                                    length: endPage - startPage + 1,
+                                  }).map((_, idx) => {
+                                    const pageNumber = startPage + idx;
+                                    return (
                                       <button
-                                        onClick={() =>
-                                          paginate(Math.min(totalPages, currentPage + 1))
+                                        key={`page-${pageNumber}`} // Make sure this is unique
+                                        onClick={() => paginate(pageNumber)}
+                                        className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${pageNumber === currentPage
+                                            ? "z-10 bg-emerald-50 border-emerald-500 text-emerald-600"
+                                            : "bg-white border-gray-300 text-gray-500 hover:bg-gray-50"
+                                          }`}
+                                        aria-current={
+                                          pageNumber === currentPage
+                                            ? "page"
+                                            : undefined
                                         }
-                                        disabled={currentPage === totalPages}
-                                        className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 focus:z-20 disabled:opacity-50 disabled:cursor-not-allowed"
-                                        aria-label="Next page"
                                       >
-                                        <span className="sr-only">Next</span>
-                                        <ChevronRight
-                                          className="h-5 w-5"
-                                          aria-hidden="true"
-                                        />
+                                        {pageNumber}
                                       </button>
-                                    </nav>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
+                                    );
+                                  })}
+
+                                  {endPage < totalPages && (
+                                    <>
+                                      {endPage < totalPages - 1 && (
+                                        <span className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">
+                                          ...
+                                        </span>
+                                      )}
+                                      <button
+                                        onClick={() => paginate(totalPages)}
+                                        className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${totalPages === currentPage
+                                            ? "z-10 bg-emerald-50 border-emerald-500 text-emerald-600"
+                                            : "bg-white border-gray-300 text-gray-500 hover:bg-gray-50"
+                                          }`}
+                                        key={`page-${totalPages}`}
+                                      >
+                                        {totalPages}
+                                      </button>
+                                    </>
+                                  )}
+                                </>
+                              );
+                            })()}
+
+                            {/* Next Button */}
+                            <button
+                              onClick={() =>
+                                paginate(Math.min(totalPages, currentPage + 1))
+                              }
+                              disabled={currentPage === totalPages}
+                              className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 focus:z-20 disabled:opacity-50 disabled:cursor-not-allowed"
+                              aria-label="Next page"
+                            >
+                              <span className="sr-only">Next</span>
+                              <ChevronRight
+                                className="h-5 w-5"
+                                aria-hidden="true"
+                              />
+                            </button>
+                          </nav>
+                        </div>
+                      </div>
+                    )}
+                  </div>
 
                   {/* Invoice Detail Panel */}
-                  <AnimatePresence>
-                    {selectedInvoice && (
-                      <motion.div
-                        key={`detail-${selectedInvoice.invoiceNumber}`}
-                        className="lg:w-1/3"
-                        initial={{ opacity: 0, x: 50 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: 50 }}
-                        transition={{ duration: 0.3 }}
-                      >
-                        <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6 sticky top-4">
-                          <div className="flex justify-between items-center mb-6">
-                            <div>
-                              <h2 className="text-xl font-bold text-gray-800">
-                                Invoice #{selectedInvoice.invoiceNumber}
-                              </h2>
-                              <p className="text-sm text-gray-500">
-                                Issued:{" "}
-                                {new Date(
-                                  selectedInvoice.dateIssued
-                                ).toLocaleString("en-US", {
-                                  year: "numeric",
-                                  month: "short",
-                                  day: "numeric",
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                  hour12: true,
-                                })}
-                              </p>
-                            </div>
-                            <button
-                              onClick={() => setSelectedInvoice(null)}
-                              className="text-gray-500 hover:text-gray-700"
-                            >
-                              <X size={20} />
-                            </button>
-                          </div>
+<AnimatePresence>
+  {selectedInvoice && (
+    <motion.div
+      key={`detail-${selectedInvoice.invoiceNumber}`}
+      className="lg:w-1/3"
+      initial={{ opacity: 0, x: 50 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: 50 }}
+      transition={{ duration: 0.3 }}
+    >
+      <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6 sticky top-4">
+        <div className="flex justify-between items-center mb-6">
+          <div>
+            <h2 className="text-xl font-bold text-gray-800">
+              Invoice #{selectedInvoice.invoiceNumber}
+            </h2>
+            <p className="text-sm text-gray-500">
+              {new Date(selectedInvoice.dateIssued).toLocaleString("en-US", {
+                year: "numeric",
+                month: "short",
+                day: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </p>
+          </div>
+          <button
+            onClick={() => setSelectedInvoice(null)}
+            className="text-gray-500 hover:text-gray-700"
+          >
+            <X size={20} />
+          </button>
+        </div>
 
-                          <div className="space-y-6">
-                            <div className="grid grid-cols-2 gap-4">
-                              <div>
-                                <h3 className="text-sm font-medium text-gray-500 mb-1">
-                                  Customer
-                                </h3>
-                                <p className="text-gray-900 font-medium">
-                                  {selectedInvoice.name}
-                                </p>
-                              </div>
-                              <div>
-                                <h3 className="text-sm font-medium text-gray-500 mb-1">
-                                  Status
-                                </h3>
-                                <span
-                                  className={`px-3 py-1 text-xs rounded-full font-medium ${
-                                    selectedInvoice.paymentStatus === "Paid"
-                                      ? "bg-green-100 text-green-800"
-                                      : "bg-yellow-100 text-yellow-800"
-                                  }`}
-                                >
-                                  {selectedInvoice.paymentStatus}
-                                </span>
-                              </div>
-                            </div>
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <h3 className="text-sm font-medium text-gray-500 mb-1">
+                Customer
+              </h3>
+              <p className="text-gray-900 font-medium">
+                {selectedInvoice.name}
+              </p>
+            </div>
+            <div>
+              <h3 className="text-sm font-medium text-gray-500 mb-1">
+                Status
+              </h3>
+              <span
+                className={`px-3 py-1 text-xs rounded-full font-medium ${
+                  selectedInvoice.paymentStatus === "Paid"
+                    ? "bg-green-100 text-green-800"
+                    : "bg-yellow-100 text-yellow-800"
+                }`}
+              >
+                {selectedInvoice.paymentStatus}
+              </span>
+            </div>
+          </div>
 
-                            <div className="grid grid-cols-2 gap-4">
-                              <div>
-                                <h3 className="text-sm font-medium text-gray-500 mb-1">
-                                  Branch
-                                </h3>
-                                <p className="text-gray-900">
-                                  {selectedInvoice.branch || "Main"}
-                                </p>
-                              </div>
-                              <div>
-                                <h3 className="text-sm font-medium text-gray-500 mb-1">
-                                  Handled By
-                                </h3>
-                                <p className="text-gray-900">
-                                  {selectedInvoice.handledBy || "Staff"}
-                                </p>
-                              </div>
-                            </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <h3 className="text-sm font-medium text-gray-500 mb-1">
+                Branch
+              </h3>
+              <p className="text-gray-900">
+                {selectedInvoice.branch || "Main"}
+              </p>
+            </div>
+            <div>
+              <h3 className="text-sm font-medium text-gray-500 mb-1">
+                Handled By
+              </h3>
+              <p className="text-gray-900">
+                {selectedInvoice.handledBy || "Staff"}
+              </p>
+            </div>
+          </div>
 
-                            <div className="border-t border-gray-200 pt-4">
-                              <h3 className="text-sm font-medium text-gray-500 mb-3">
-                                Services
-                              </h3>
-                              <div className="space-y-3">
-                                {selectedInvoice.services.map(
-                                  (service, index) => (
-                                    <div
-                                      key={`service-${selectedInvoice.invoiceNumber}-${index}`}
-                                      className="flex justify-between items-center py-2 border-b border-gray-100 last:border-0"
-                                    >
-                                      <div>
-                                        <p className="text-gray-800 font-medium">
-                                          {service.name}
-                                        </p>
-                                      </div>
-                                      <p className="text-gray-900 font-medium">
-                                        {service.price}
-                                      </p>
-                                    </div>
-                                  )
-                                )}
-                              </div>
-                            </div>
+          <div className="border-t border-gray-200 pt-4">
+            <h3 className="text-sm font-medium text-gray-500 mb-3">
+              Services
+            </h3>
+            <div className="space-y-3">
+              {selectedInvoice.services.map((service, index) => {
+                // Calculate service values
+                const servicePrice = typeof service.price === 'string' 
+                  ? parseFloat(service.price.replace(/[₱,]/g, '')) 
+                  : service.price || 0;
+                const serviceQuantity = service.quantity || 1;
+                const serviceTotal = servicePrice * serviceQuantity;
+                
+                return (
+                  <div
+                    key={`service-${selectedInvoice.invoiceNumber}-${index}`}
+                    className="flex justify-between items-start py-2 border-b border-gray-100 last:border-0"
+                  >
+                    <div className="flex-1">
+                      <p className="text-gray-800 font-medium">
+                        {service.name}
+                      </p>
+                      <p className="text-sm text-gray-500 mt-1">
+                        Qty: {serviceQuantity} × {formatCurrency(servicePrice)}
+                      </p>
+                    </div>
+                    <p className="text-gray-900 font-medium tabular-nums">
+                      {formatCurrency(serviceTotal)}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
 
-                            <div className="bg-gray-50 p-4 rounded-lg">
-                              <div className="flex justify-between items-center">
-                                <h3 className="text-lg font-bold text-gray-800">
-                                  Total Amount
-                                </h3>
-                                <p className="text-xl font-bold text-emerald-600">
-                                  {selectedInvoice.totalAmount}
-                                </p>
-                              </div>
-                            </div>
+         {/* Totals Section - Fallback version */}
+<div className="border-t border-gray-200 pt-4 space-y-3 text-sm">
+  {(() => {
+    // Calculate subtotal from services
+    const subtotal = selectedInvoice.services.reduce((sum, service) => {
+      const servicePrice = typeof service.price === 'string' 
+        ? parseFloat(service.price.replace(/[₱,]/g, '')) 
+        : service.price || 0;
+      const serviceQuantity = service.quantity || 1;
+      return sum + (servicePrice * serviceQuantity);
+    }, 0);
 
-                            <div className="flex space-x-3 pt-2">
-                              <motion.button
-                                onClick={() =>
-                                  handlePrintInvoice(selectedInvoice)
-                                }
-                                className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg text-sm font-medium flex items-center justify-center"
-                                whileHover={{ scale: 1.02 }}
-                                whileTap={{ scale: 0.98 }}
-                              >
-                                <Printer className="mr-2" size={16} />
-                                Print Invoice
-                              </motion.button>
-                              {selectedInvoice.paymentStatus === "Pending" && (
-                                <motion.button
-                                  onClick={() =>
-                                    handlePaymentStatusUpdate(
-                                      selectedInvoice.invoiceNumber,
-                                      "Paid"
-                                    )
-                                  }
-                                  className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium flex items-center justify-center"
-                                  whileHover={{ scale: 1.02 }}
-                                  whileTap={{ scale: 0.98 }}
-                                >
-                                  <Check className="mr-2" size={16} />
-                                  Mark as Paid
-                                </motion.button>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+    const totalAmount = typeof selectedInvoice.totalAmount === 'string'
+      ? parseFloat(selectedInvoice.totalAmount.replace(/[₱,]/g, ''))
+      : selectedInvoice.totalAmount || 0;
+
+    const totalDiscount = subtotal - totalAmount;
+
+    // Check if customer might be a member (you can add this to your backend)
+    const isMember = selectedInvoice.isMember || selectedInvoice.name?.includes('Member') || false;
+    const membershipType = selectedInvoice.membershipType || 'premium';
+
+    // Estimate membership discount (50% for premium members)
+    const estimatedMembershipDiscount = isMember ? totalDiscount * 0.7 : 0; // Assume 70% of discount is from membership
+
+    return (
+      <>
+        {/* Subtotal */}
+        <div className="flex justify-between">
+          <span className="text-gray-600">Subtotal:</span>
+          <span className="tabular-nums text-gray-800">
+            {formatCurrency(subtotal)}
+          </span>
+        </div>
+
+        {/* Membership Discount (estimated) */}
+        {isMember && estimatedMembershipDiscount > 0 && (
+          <div className="flex justify-between text-emerald-600">
+            <span>Membership Discount ({membershipType === 'premium' ? '50%' : 'Standard'}):</span>
+            <span className="tabular-nums">
+              -{formatCurrency(estimatedMembershipDiscount)}
+            </span>
+          </div>
+        )}
+
+        {/* Other Discounts */}
+        {totalDiscount > 0 && (
+          <div className="flex justify-between text-blue-600">
+            <span>Other Discounts:</span>
+            <span className="tabular-nums">
+              -{formatCurrency(totalDiscount - estimatedMembershipDiscount)}
+            </span>
+          </div>
+        )}
+
+        {/* Total */}
+        <div className="border-t pt-3 mt-3">
+          <div className="flex justify-between font-bold text-base">
+            <span className="text-gray-800">TOTAL:</span>
+            <span className="tabular-nums text-emerald-600">
+              {formatCurrency(totalAmount)}
+            </span>
+          </div>
+        </div>
+
+        {/* Membership Badge */}
+        {isMember && (
+          <div className="mt-2 text-xs text-emerald-600 text-center">
+            ✓ Membership benefits applied
+          </div>
+        )}
+      </>
+    );
+  })()}
+</div>
+
+          <div className="flex space-x-3 pt-2">
+            <motion.button
+              onClick={() => handlePrintInvoice(selectedInvoice)}
+              className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg text-sm font-medium flex items-center justify-center"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              <Printer className="mr-2" size={16} />
+              Print Invoice
+            </motion.button>
+            {selectedInvoice.paymentStatus === "Pending" && (
+              <motion.button
+                onClick={() =>
+                  handlePaymentStatusUpdate(
+                    selectedInvoice.invoiceNumber,
+                    "Paid"
+                  )
+                }
+                className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium flex items-center justify-center"
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                <Check className="mr-2" size={16} />
+                Mark as Paid
+              </motion.button>
+            )}
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  )}
+</AnimatePresence>
                 </div>
               )}
             </motion.div>

@@ -178,12 +178,13 @@ const shouldShowNewMemberBadge = (customer) => {
   const [isMembershipModalOpen, setIsMembershipModalOpen] = useState(false);
   const [selectedForMembership, setSelectedForMembership] = useState(null);
   const [membershipForm, setMembershipForm] = useState({
-    type: "basic",
-    name: "Basic",
-    fee: 3000,
-    consumable: 5000,
-    paymentMethod: "Cash",
-  });
+  type: "basic",
+  templateId: "basic", // Use IDs instead of type
+  name: "Basic",
+  fee: 3000,
+  consumable: 5000,
+  paymentMethod: "Cash",
+});
 
   const [newCustomer, setNewCustomer] = useState({
     name: "",
@@ -617,6 +618,7 @@ const shouldShowNewMemberBadge = (customer) => {
       customer_id: customer.id,
       action: "New Member",
       type: membershipForm.type.toLowerCase(),
+        template_id: membershipForm.templateId,
       coverage: parseFloat(membershipForm.consumable),
       remaining_balance: parseFloat(membershipForm.consumable),
       payment_method: membershipForm.paymentMethod || "cash",
@@ -1860,39 +1862,67 @@ const shouldShowNewMemberBadge = (customer) => {
       <span className="font-medium text-sm">
         {selectedCustomer.isExpired
           ? "EXPIRED Member"
-          : selectedCustomer.membership?.toLowerCase() === "pro"
-            ? "PRO Member"
-            : selectedCustomer.membership?.toLowerCase() === "basic"
-              ? "Basic Member"
-              : selectedCustomer.membership?.toLowerCase() === "promo"
-                ? "Membership Promo"
-                : "No Membership"}
+          : selectedCustomer.membershipDetails?.membershipName || 
+            (selectedCustomer.membership?.toLowerCase() === "pro"
+              ? "PRO Member"
+              : selectedCustomer.membership?.toLowerCase() === "basic"
+                ? "Basic Member"
+                : selectedCustomer.membership?.toLowerCase() === "promo"
+                  ? "Promo Member"
+                  : "No Membership")}
       </span>
       {selectedCustomer.membership !== "None" && selectedCustomer.membershipDetails?.expire_date && (
         <span className={`text-xs ${selectedCustomer.isExpired ? 'text-red-600 font-medium' : 'text-gray-500'}`}>
-          {selectedCustomer.isExpired ? 'Expired: ' : 'Expires: '}
-          {new Date(selectedCustomer.membershipDetails.expire_date).toLocaleDateString()}
         </span>
       )}
     </div>
 
     {selectedCustomer.membership !== "None" && (
-      <div className="grid grid-cols-2 gap-2 text-xs">
-        <div>
-          <div className="text-gray-600">Coverage:</div>
-          <div className="font-medium truncate">
-            {selectedCustomer.membershipDetails?.coverage}
+      <div className="space-y-2">
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <div>
+            <div className="text-gray-600">Coverage:</div>
+            <div className="font-medium truncate">
+              ₱{Number(selectedCustomer.membershipDetails?.coverage).toLocaleString("en-PH")}
+            </div>
+          </div>
+          <div>
+            <div className="text-gray-600">Remaining:</div>
+            <div className={`font-medium ${selectedCustomer.isExpired ? 'text-red-700' : 'text-green-700'}`}>
+              ₱{Number(selectedCustomer.membershipDetails?.remainingBalance).toLocaleString("en-PH")}
+            </div>
           </div>
         </div>
-        <div>
-          <div className="text-gray-600">Remaining:</div>
-          <div className={`font-medium ${selectedCustomer.isExpired ? 'text-red-700' : 'text-green-700'}`}>
-            ₱
-            {
-              selectedCustomer.membershipDetails?.remainingBalance
-            }
+        
+        {/* Additional info for promo memberships */}
+        {selectedCustomer.membership?.toLowerCase() === "promo" && selectedCustomer.membershipDetails?.expire_date && (
+          <div className="pt-2 border-t border-gray-200">
+            <div className="flex justify-between items-center text-xs">
+              <span className="text-gray-600">Promo Valid Until:</span>
+              <span className={`font-medium ${selectedCustomer.isExpired ? 'text-red-600' : 'text-amber-600'}`}>
+                {new Date(selectedCustomer.membershipDetails.expire_date).toLocaleDateString()}
+              </span>
+            </div>
+            {selectedCustomer.isExpired && (
+              <div className="text-xs text-red-600 font-medium mt-1 text-center">
+                ⚠️ This promo membership has expired
+              </div>
+            )}
           </div>
-        </div>
+        )}
+        
+        {/* Additional info for Basic/Pro memberships with expiration */}
+        {(selectedCustomer.membership?.toLowerCase() === "basic" || selectedCustomer.membership?.toLowerCase() === "pro") && 
+         selectedCustomer.membershipDetails?.expire_date && (
+          <div className="pt-2 border-t border-gray-200">
+            <div className="flex justify-between items-center text-xs">
+              <span className="text-gray-600">Renewal Date:</span>
+              <span className={`font-medium ${selectedCustomer.isExpired ? 'text-red-600' : 'text-blue-600'}`}>
+                {new Date(selectedCustomer.membershipDetails.expire_date).toLocaleDateString()}
+              </span>
+            </div>
+          </div>
+        )}
       </div>
     )}
   </div>
@@ -2000,62 +2030,54 @@ const shouldShowNewMemberBadge = (customer) => {
 
               <div className="space-y-4">
                 {/* Membership Type Selector */}
-                <div>
-                  <label className="block mb-1 text-sm font-medium">
-                    Membership Type
-                  </label>
-                  <select
-                    value={membershipForm.type}
-                    onChange={(e) => {
-                      const type = e.target.value;
-                      const template = membershipTemplates.find(
-                        (m) => m.type === type
-                      );
+<div>
+  <label className="block mb-1 text-sm font-medium">
+    Membership Type
+  </label>
+  <select
+  value={membershipForm.templateId}
+  onChange={(e) => {
+    const selectedId = e.target.value;
+    let template;
+    
+    if (selectedId === "basic" || selectedId === "pro") {
+      template = {
+        id: selectedId,
+        type: selectedId,
+        name: selectedId === "basic" ? "Basic" : "Pro",
+        price: selectedId === "basic" ? 3000 : 6000,
+        consumable_amount: selectedId === "basic" ? 5000 : 10000,
+        valid_until: "",
+        no_expiration: 1
+      };
+    } else {
+      template = membershipTemplates.find(m => m.id.toString() === selectedId);
+    }
 
-                      setMembershipForm({
-                        ...membershipForm,
-                        type,
-                        name: template
-                          ? template.name
-                          : type === "basic"
-                            ? "Basic"
-                            : "Pro",
-                        fee: template
-                          ? template.price
-                          : type === "basic"
-                            ? 3000
-                            : 6000,
-                        consumable: template
-                          ? template.consumable_amount
-                          : type === "basic"
-                            ? 5000
-                            : 10000,
-                        validTo:
-                          template && template.valid_until
-                            ? template.valid_until
-                            : "",
-                        noExpiration: template
-                          ? template.no_expiration === 1
-                          : false,
-                      });
-                    }}
-                    className="w-full p-2 border rounded"
-                  >
-                    <option value="basic">
-                      Basic (₱3,000 for 5,000 consumable)
-                    </option>
-                    <option value="pro">
-                      Pro (₱6,000 for 10,000 consumable)
-                    </option>
-                    {membershipTemplates
-                      .filter((m) => m.type === "promo")
-                      .map((m) => (
-                        <option key={m.id} value="promo">
-                          {m.name} (Promo)
-                        </option>
-                      ))}
-                  </select>
-                </div>
+    setMembershipForm({
+      ...membershipForm,
+      type: template.type,
+      templateId: selectedId,
+      name: template.name,
+      fee: template.price,
+      consumable: template.consumable_amount,
+      validTo: template.valid_until || "",
+      noExpiration: template.no_expiration === 1,
+    });
+  }}
+  className="w-full p-2 border rounded"
+>
+  <option value="basic">Basic (₱3,000 for 5,000 consumable)</option>
+  <option value="pro">Pro (₱6,000 for 10,000 consumable)</option>
+  {membershipTemplates
+    .filter((m) => m.type === "promo")
+    .map((m) => (
+      <option key={m.id} value={m.id}>
+        {m.name} (Promo)
+      </option>
+    ))}
+</select>
+</div>
 
                 {/* Payment Method Selector */}
                 <div>

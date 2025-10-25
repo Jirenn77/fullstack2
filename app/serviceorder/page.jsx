@@ -135,7 +135,7 @@ export default function ServiceOrderPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [customers, setCustomers] = useState([]);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
-    const [currentUser, setCurrentUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
   const [isCustomersLoading, setIsCustomersLoading] = useState(true);
   const [membershipTemplates, setMembershipTemplates] = useState([]);
   const [customersError, setCustomersError] = useState(null);
@@ -160,7 +160,8 @@ export default function ServiceOrderPage() {
   });
 
   // Membership upgrade states
-  const [isMembershipUpgradeModalOpen, setIsMembershipUpgradeModalOpen] = useState(false);
+  const [isMembershipUpgradeModalOpen, setIsMembershipUpgradeModalOpen] =
+    useState(false);
   const [upgradeMembershipForm, setUpgradeMembershipForm] = useState({
     type: "basic",
     name: "Basic",
@@ -227,80 +228,90 @@ export default function ServiceOrderPage() {
     }
   };
 
-const fetchCustomersWithMembership = async () => {
-  try {
-    setIsCustomersLoading(true);
-    
-    // Fetch customers
-    const customersRes = await fetch("http://localhost/API/customers.php");
-    if (!customersRes.ok) throw new Error("Failed to fetch customers");
-    const customersData = await customersRes.json();
+  const fetchCustomersWithMembership = async () => {
+    try {
+      setIsCustomersLoading(true);
 
-    // Fetch memberships
-    const membershipsRes = await fetch("http://localhost/API/members.php");
-    const membershipsData = await membershipsRes.json();
-    
-    console.log("Memberships data:", membershipsData);
+      const customersRes = await fetch("http://localhost/API/customers.php");
+      if (!customersRes.ok) throw new Error("Failed to fetch customers");
+      const customersData = await customersRes.json();
 
-    const formatted = customersData.map((cust) => {
-      let newMember = false;
-      let isExpired = false;
-      let membershipBalance = 0;
-      let expirationDate = null;
+      const membershipsRes = await fetch("http://localhost/API/members.php");
+      const membershipsData = await membershipsRes.json();
 
-      // Find membership for this customer
-      const membership = membershipsData.find(m => m.customer_id == cust.id);
-      console.log(`Membership for customer ${cust.id}:`, membership);
+      // Fetch membership templates to get the names
+      const templatesRes = await fetch("http://localhost/API/memberships.php");
+      const templatesData = await templatesRes.json();
 
-      if (membership) {
-        // Check expiration
-        if (membership.expire_date) {
-          const expire = new Date(membership.expire_date);
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-          expire.setHours(0, 0, 0, 0);
-          
-          isExpired = expire < today;
-          expirationDate = membership.expire_date;
-        }
-        
-        membershipBalance = membership.remaining_balance || 0;
-      }
+      const formatted = customersData.map((cust) => {
+        let isExpired = false;
+        let membershipBalance = 0;
+        let expirationDate = null;
+        let membershipDetails = null;
 
-      try {
-        const stored = localStorage.getItem(`newMember:${cust.id}`);
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          const createdAt = parsed?.createdAt ? new Date(parsed.createdAt) : null;
-          const now = new Date();
-          if (createdAt && now.getTime() - createdAt.getTime() < 24 * 60 * 60 * 1000) {
-            newMember = true;
-          } else {
-            localStorage.removeItem(`newMember:${cust.id}`);
+        // Find membership for this customer
+        const membership = membershipsData.find(
+          (m) => m.customer_id == cust.id
+        );
+
+        if (membership) {
+          // Find the template to get the name - match by type
+          const template = templatesData.find(
+            (t) => t.type.toLowerCase() === membership.type.toLowerCase()
+          );
+
+          // Check expiration
+          if (membership.expire_date) {
+            const expire = new Date(membership.expire_date);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            expire.setHours(0, 0, 0, 0);
+
+            isExpired = expire < today;
+            expirationDate = membership.expire_date;
           }
+
+          membershipBalance = membership.remaining_balance || 0;
+          membershipDetails = {
+            name:
+              template?.name ||
+              (membership.type.toLowerCase() === "pro"
+                ? "Pro Member"
+                : membership.type.toLowerCase() === "basic"
+                  ? "Basic Member"
+                  : membership.type.toLowerCase() === "promo"
+                    ? "Promo Member"
+                    : membership.type),
+            coverage: membership.coverage,
+            remainingBalance: membership.remaining_balance,
+            expire_date: membership.expire_date,
+            type: membership.type,
+          };
         }
-      } catch (_) {}
 
-      return {
-        id: cust.id,
-        name: cust.name,
-        membershipType: cust.membership_status,
+        const isNewMember = shouldShowNewMemberBadge(cust);
+
+        return {
+          id: cust.id,
+          name: cust.name,
+          membershipType: cust.membership_status,
           isMember: cust.membership_status !== "None",
-        balance: membershipBalance,
-        isNewMember: newMember,
-        isExpired: isExpired,
-        expirationDate: expirationDate,
-      };
-    });
+          balance: membershipBalance,
+          isNewMember: isNewMember,
+          isExpired: isExpired,
+          expirationDate: expirationDate,
+          membershipDetails: membershipDetails,
+        };
+      });
 
-    setCustomers(formatted);
-  } catch (err) {
-    console.error(err);
-    setCustomersError("Failed to load customers");
-  } finally {
-    setIsCustomersLoading(false);
-  }
-};
+      setCustomers(formatted);
+    } catch (err) {
+      console.error(err);
+      setCustomersError("Failed to load customers");
+    } finally {
+      setIsCustomersLoading(false);
+    }
+  };
 
   useEffect(() => {
     fetchCustomers();
@@ -308,8 +319,11 @@ const fetchCustomersWithMembership = async () => {
   }, []);
 
   const today = new Date();
-console.log("Today's date:", today.toISOString().split('T')[0]);
-console.log("Testing expiration for 2025-10-15:", new Date('2025-10-15') < today);
+  console.log("Today's date:", today.toISOString().split("T")[0]);
+  console.log(
+    "Testing expiration for 2025-10-15:",
+    new Date("2025-10-15") < today
+  );
 
   // Fetch services on component mount
   useEffect(() => {
@@ -561,8 +575,8 @@ console.log("Testing expiration for 2025-10-15:", new Date('2025-10-15') < today
   );
 
   const premiumServiceIds = membershipServices.map((s) => s.id);
-  
-          const premiumSubtotal = selectedServices
+
+  const premiumSubtotal = selectedServices
     .filter(
       (service) =>
         premiumServiceIds.includes(service.id) &&
@@ -573,43 +587,46 @@ console.log("Testing expiration for 2025-10-15:", new Date('2025-10-15') < today
 
   // Calculate membership eligibility
   const canUseDiscountServices =
-  isMember &&
-  useMembership &&
-  !selectedCustomer?.isExpired && // ✅ ADD: Expired members cannot use discounts
-  // Regular members can always use discounts
-  (!isNewMember ||
-    // New members can use discounts ONLY when balance is 0 or less
-    (isNewMember && membershipBalance <= 0));
+    isMember &&
+    useMembership &&
+    !selectedCustomer?.isExpired && // ✅ ADD: Expired members cannot use discounts
+    // Regular members can always use discounts
+    (!isNewMember ||
+      // New members can use discounts ONLY when balance is 0 or less
+      (isNewMember && membershipBalance <= 0));
 
   // Apply 50% discount only if eligible
   const membershipDiscountAmount = canUseDiscountServices
     ? premiumSubtotal * 0.5
     : 0;
 
- const membershipBalanceDeduction = isMember && useMembership && membershipBalance > 0 && !selectedCustomer?.isExpired // ✅ ADD expiration check here only
-  ? (() => {
-      const eligibleServicesTotal = selectedServices
-        .filter((s) => !s.isFromPromo && !s.isFromBundle)
-        .reduce((sum, s) => sum + s.price * (s.quantity || 1), 0);
+  const membershipBalanceDeduction =
+    isMember &&
+    useMembership &&
+    membershipBalance > 0 &&
+    !selectedCustomer?.isExpired // ✅ ADD expiration check here only
+      ? (() => {
+          const eligibleServicesTotal = selectedServices
+            .filter((s) => !s.isFromPromo && !s.isFromBundle)
+            .reduce((sum, s) => sum + s.price * (s.quantity || 1), 0);
 
-      const amountAfterMembershipDiscount =
-        !isNewMember && membershipDiscountAmount > 0
-          ? Math.max(eligibleServicesTotal - membershipDiscountAmount, 0)
-          : eligibleServicesTotal;
+          const amountAfterMembershipDiscount =
+            !isNewMember && membershipDiscountAmount > 0
+              ? Math.max(eligibleServicesTotal - membershipDiscountAmount, 0)
+              : eligibleServicesTotal;
 
-      return Math.min(membershipBalance, amountAfterMembershipDiscount);
-    })()
-  : 0;
+          return Math.min(membershipBalance, amountAfterMembershipDiscount);
+        })()
+      : 0;
 
-
-// Unified membership reduction for total calculation
-// In the membership reduction calculation
-const membershipReductionUsed =
-  isMember && useMembership
-    ? isNewMember
-      ? membershipBalanceDeduction // new members
-      : membershipDiscountAmount // existing members
-    : 0;
+  // Unified membership reduction for total calculation
+  // In the membership reduction calculation
+  const membershipReductionUsed =
+    isMember && useMembership
+      ? isNewMember
+        ? membershipBalanceDeduction // new members
+        : membershipDiscountAmount // existing members
+      : 0;
 
   const updateQuantity = (serviceId, newQuantity) => {
     setSelectedServices((prev) =>
@@ -622,161 +639,167 @@ const membershipReductionUsed =
   };
 
   const formatDate = (dateString) => {
-  if (!dateString) return 'No expiry';
-  const date = new Date(dateString);
-  return date.toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric'
-  });
-};
-
-  const confirmSave = async () => {
-  if (!selectedCustomer || selectedServices.length === 0) {
-    toast.warning("Please select a customer and at least one service.");
-    return;
-  }
-
-  // Get current user data
-  const currentUserResponse = await fetch("http://localhost/API/branches.php?action=user", {
-    credentials: "include"
-  });
-  const currentUserData = await currentUserResponse.json();
-
-  console.log('Current User Data:', currentUserData); // Debug log
-
-  let appliedMembershipDiscount = 0;
-  let appliedMembershipBalance = 0;
-
-  if (isMember && useMembership) {
-    if (membershipBalanceDeduction > 0) {
-      appliedMembershipBalance = membershipBalanceDeduction;
-      appliedMembershipDiscount = 0;
-    } else {
-      appliedMembershipDiscount = membershipDiscountAmount || 0;
-      appliedMembershipBalance = 0;
-    }
-  }
-
-  const servicesTotal = selectedServices.reduce(
-    (sum, service) => sum + service.price * (service.quantity || 1),
-    0
-  );
-
-  const newBalance =
-    isMember && useMembership && appliedMembershipBalance > 0
-      ? Math.max(0, membershipBalance - appliedMembershipBalance)
-      : membershipBalance;
-
-  setMembershipBalance(newBalance);
-
-  const grandTotal = Math.max(
-    0,
-    servicesTotal -
-      (promoReduction || 0) -
-      (discountReduction || 0) -
-      appliedMembershipDiscount -
-      appliedMembershipBalance
-  );
-
-  const orderData = {
-    order_number: orderNumber,
-    customer_id: selectedCustomer.id,
-    customer_name: customerName,
-    services: selectedServices.map((service) => ({
-      service_id: service.id,
-      name: service.name,
-      price: service.price,
-      quantity: service.quantity,
-    })),
-    subtotal: servicesTotal,
-    promoReduction: promoReduction || 0,
-    discountReduction: discountReduction || 0,
-    discount: discount,
-    promo: promoApplied || null,
-    membershipDiscount: appliedMembershipDiscount,
-    membershipBalanceDeduction: appliedMembershipBalance,
-    grand_total: grandTotal,
-    new_membership_balance: newBalance,
-
-    // Use actual user data - remove fallbacks to see what's really being sent
-    employee_name: currentUserData?.name,
-    employee_id: currentUserData?.id,
-    branch_name: currentUserData?.branch_name,
-    branch_id: currentUserData?.branch_id,
-    handledBy: currentUserData?.name,
-    branch: currentUserData?.branch_name || currentUserData?.branch,
-
-    is_member: isMember,
-    membership_type: isMember ? membershipType : null,
-    date: new Date().toISOString(),
+    if (!dateString) return "No expiry";
+    const date = new Date(dateString);
+    return date.toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
   };
 
-  try {
-    const response = await fetch("http://localhost/API/saveAcquire.php", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(orderData), // Send the complete orderData
-    });
+  const confirmSave = async () => {
+    if (!selectedCustomer || selectedServices.length === 0) {
+      toast.warning("Please select a customer and at least one service.");
+      return;
+    }
 
-    const text = await response.text();
-    console.log('Server Response:', text); // Debug log
+    // Get current user data
+    const currentUserResponse = await fetch(
+      "http://localhost/API/branches.php?action=user",
+      {
+        credentials: "include",
+      }
+    );
+    const currentUserData = await currentUserResponse.json();
+
+    console.log("Current User Data:", currentUserData); // Debug log
+
+    let appliedMembershipDiscount = 0;
+    let appliedMembershipBalance = 0;
+
+    if (isMember && useMembership) {
+      if (membershipBalanceDeduction > 0) {
+        appliedMembershipBalance = membershipBalanceDeduction;
+        appliedMembershipDiscount = 0;
+      } else {
+        appliedMembershipDiscount = membershipDiscountAmount || 0;
+        appliedMembershipBalance = 0;
+      }
+    }
+
+    const servicesTotal = selectedServices.reduce(
+      (sum, service) => sum + service.price * (service.quantity || 1),
+      0
+    );
+
+    const newBalance =
+      isMember && useMembership && appliedMembershipBalance > 0
+        ? Math.max(0, membershipBalance - appliedMembershipBalance)
+        : membershipBalance;
+
+    setMembershipBalance(newBalance);
+
+    const grandTotal = Math.max(
+      0,
+      servicesTotal -
+        (promoReduction || 0) -
+        (discountReduction || 0) -
+        appliedMembershipDiscount -
+        appliedMembershipBalance
+    );
+
+    const orderData = {
+      order_number: orderNumber,
+      customer_id: selectedCustomer.id,
+      customer_name: customerName,
+      services: selectedServices.map((service) => ({
+        service_id: service.id,
+        name: service.name,
+        price: service.price,
+        quantity: service.quantity,
+      })),
+      subtotal: servicesTotal,
+      promoReduction: promoReduction || 0,
+      discountReduction: discountReduction || 0,
+      discount: discount,
+      promo: promoApplied || null,
+      membershipDiscount: appliedMembershipDiscount,
+      membershipBalanceDeduction: appliedMembershipBalance,
+      grand_total: grandTotal,
+      new_membership_balance: newBalance,
+
+      // Use actual user data - remove fallbacks to see what's really being sent
+      employee_name: currentUserData?.name,
+      employee_id: currentUserData?.id,
+      branch_name: currentUserData?.branch_name,
+      branch_id: currentUserData?.branch_id,
+      handledBy: currentUserData?.name,
+      branch: currentUserData?.branch_name || currentUserData?.branch,
+
+      is_member: isMember,
+      membership_type: isMember ? membershipType : null,
+      date: new Date().toISOString(),
+    };
 
     try {
-      const result = JSON.parse(text);
+      const response = await fetch("http://localhost/API/saveAcquire.php", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(orderData), // Send the complete orderData
+      });
 
-      if (result.message) {
-        toast.success("Service acquired successfully!");
+      const text = await response.text();
+      console.log("Server Response:", text); // Debug log
 
-        // ✅ CRITICAL FIX: Use server response data instead of local orderData
-        const finalOrderData = {
-          ...orderData, // Start with local data
-          // Override with server-provided data (this is what matters!)
-          grand_total: result.calculated_total ?? orderData.grand_total,
-          new_membership_balance: result.new_balance ?? orderData.new_membership_balance,
-          membership_balance_updated: result.membership_balance_updated,
-          
-          // ✅ USE THE SERVER'S BRANCH AND HANDLED_BY DATA
-          branch: result.branch ?? result.branch_name ?? orderData.branch,
-          branch_name: result.branch_name ?? result.branch ?? orderData.branch_name,
-          handled_by: result.handled_by ?? orderData.handledBy,
-          handledBy: result.handled_by ?? orderData.handledBy,
-          employee_name: result.handled_by ?? orderData.employee_name,
-          
-          // Include server debug info
-          server_response: result,
-        };
+      try {
+        const result = JSON.parse(text);
 
-        console.log('Final Order Data for Display:', finalOrderData); // Debug log
+        if (result.message) {
+          toast.success("Service acquired successfully!");
 
-        setMembershipBalance(finalOrderData.new_membership_balance);
-        setSavedOrderData(finalOrderData);
-        setCurrentStep(4);
+          // ✅ CRITICAL FIX: Use server response data instead of local orderData
+          const finalOrderData = {
+            ...orderData, // Start with local data
+            // Override with server-provided data (this is what matters!)
+            grand_total: result.calculated_total ?? orderData.grand_total,
+            new_membership_balance:
+              result.new_balance ?? orderData.new_membership_balance,
+            membership_balance_updated: result.membership_balance_updated,
 
-        if (isNewMember && finalOrderData.new_membership_balance <= 0) {
-          try {
-            if (selectedCustomer?.id) {
-              localStorage.removeItem(`newMember:${selectedCustomer.id}`);
-            }
-          } catch (_) {}
-          setIsNewMember(false);
+            // ✅ USE THE SERVER'S BRANCH AND HANDLED_BY DATA
+            branch: result.branch ?? result.branch_name ?? orderData.branch,
+            branch_name:
+              result.branch_name ?? result.branch ?? orderData.branch_name,
+            handled_by: result.handled_by ?? orderData.handledBy,
+            handledBy: result.handled_by ?? orderData.handledBy,
+            employee_name: result.handled_by ?? orderData.employee_name,
+
+            // Include server debug info
+            server_response: result,
+          };
+
+          console.log("Final Order Data for Display:", finalOrderData); // Debug log
+
+          setMembershipBalance(finalOrderData.new_membership_balance);
+          setSavedOrderData(finalOrderData);
+          setCurrentStep(4);
+
+          // ✅ Check if we should remove new member badge (when balance is used up)
+          if (isNewMember && finalOrderData.new_membership_balance <= 0) {
+            try {
+              if (selectedCustomer?.id) {
+                localStorage.removeItem(`newMember:${selectedCustomer.id}`);
+              }
+            } catch (_) {}
+            setIsNewMember(false);
+          }
+        } else {
+          toast.error(result.error || "Save failed");
         }
-      } else {
-        toast.error(result.error || "Save failed");
+      } catch (parseErr) {
+        console.error("Invalid JSON from server:", text);
+        // Even if JSON is invalid, use the local data but log it
+        console.log("Using local orderData due to JSON error:", orderData);
+        setSavedOrderData(orderData);
+        setCurrentStep(4);
+        toast.warning("Saved locally but server returned invalid JSON");
       }
-    } catch (parseErr) {
-      console.error("Invalid JSON from server:", text);
-      // Even if JSON is invalid, use the local data but log it
-      console.log('Using local orderData due to JSON error:', orderData);
-      setSavedOrderData(orderData);
-      setCurrentStep(4);
-      toast.warning("Saved locally but server returned invalid JSON");
+    } catch (err) {
+      console.error("Save failed", err);
+      toast.error("Network error occurred");
     }
-  } catch (err) {
-    console.error("Save failed", err);
-    toast.error("Network error occurred");
-  }
-};
+  };
 
   // Add these helper functions
   const calculateTotalOriginalPrice = (services) => {
@@ -929,15 +952,48 @@ const membershipReductionUsed =
     }
   };
 
+  // Helper function to check if customer should show new member badge
+  const shouldShowNewMemberBadge = (customer) => {
+    try {
+      const stored = localStorage.getItem(`newMember:${customer.id}`);
+      if (!stored) return false;
+
+      const parsed = JSON.parse(stored);
+      const storedMembershipId = parsed?.membershipId;
+      const currentMembershipId = customer.membership_id;
+
+      // Only remove the badge if membership has been renewed (different membership ID)
+      if (
+        storedMembershipId &&
+        currentMembershipId &&
+        storedMembershipId !== currentMembershipId &&
+        currentMembershipId !== null &&
+        currentMembershipId !== undefined
+      ) {
+        // Membership renewed - remove flag and don't show badge
+        localStorage.removeItem(`newMember:${customer.id}`);
+        return false;
+      }
+
+      // Show badge if flag exists and hasn't been renewed
+      return true;
+    } catch (_) {
+      return false;
+    }
+  };
+
   const handleCustomerSelect = (customer) => {
     setCustomerName(customer.name);
     setMembershipType(customer.membershipType);
     setIsMember(customer.isMember);
-    setMembershipBalance(customer.balance); // ✅ set balance here
-    setMembershipExpiration(customer.expirationDate); // ✅ set expiration
+    setMembershipBalance(customer.balance);
+    setMembershipExpiration(customer.expirationDate);
     setSelectedCustomer(customer);
-    // Determine if this is a first-time/new member using localStorage flag hydrated in customers list
-    setIsNewMember(!!customer.isNewMember);
+
+    // Enhanced new member detection using localStorage like in Customers page
+    const isNewMember = shouldShowNewMemberBadge(customer);
+    setIsNewMember(isNewMember);
+
     setIsCustomerModalOpen(false);
   };
 
@@ -1021,6 +1077,51 @@ const membershipReductionUsed =
     }
 
     try {
+      let userData = currentUser;
+
+      // If currentUser is not available, try to fetch it
+      if (!userData) {
+        try {
+          const currentUserResponse = await fetch(
+            "http://localhost/API/branches.php?action=user",
+            {
+              credentials: "include",
+            }
+          );
+
+          if (currentUserResponse.ok) {
+            userData = await currentUserResponse.json();
+            console.log(
+              "Fetched user data in handleMembershipUpgrade:",
+              userData
+            );
+          }
+        } catch (userError) {
+          console.error("Error fetching user data:", userError);
+        }
+      }
+
+      // Also try localStorage as fallback
+      if (!userData) {
+        const storedUser = localStorage.getItem("user");
+        if (storedUser) {
+          try {
+            userData = JSON.parse(storedUser);
+            console.log("User data from localStorage:", userData);
+          } catch (parseError) {
+            console.error(
+              "Error parsing user data from localStorage:",
+              parseError
+            );
+          }
+        }
+      }
+
+      // Use consistent user ID and branch ID fields
+      const userId = userData?.id || userData?.user_id || null;
+      const branchId = userData?.branch_id || null;
+      const userName = userData?.name || "Unknown User";
+
       const body = {
         customer_id: selectedCustomer.id,
         action: "New Member",
@@ -1030,7 +1131,12 @@ const membershipReductionUsed =
         payment_method: upgradeMembershipForm.paymentMethod || "cash",
         note: upgradeMembershipForm.description || "",
         duration: 1,
+        branch_id: branchId,
+        performed_by: userId,
+        performed_by_name: userName,
       };
+
+      console.log("Sending membership upgrade data:", body); // Debug log
 
       if (
         upgradeMembershipForm.type === "promo" &&
@@ -1087,7 +1193,7 @@ const membershipReductionUsed =
         );
         setCustomers(updatedCustomers);
 
-        // Store the new member flag with membership ID
+        // ✅ Store the new member flag with membership ID (same as Customers page)
         try {
           localStorage.setItem(
             `newMember:${selectedCustomer.id}`,
@@ -1098,7 +1204,7 @@ const membershipReductionUsed =
             })
           );
         } catch (_) {
-          // storage may be unavailable; ignore
+          // ignore storage errors
         }
 
         setIsMembershipUpgradeModalOpen(false);
@@ -1113,18 +1219,18 @@ const membershipReductionUsed =
   };
 
   const filteredCategories = serviceCategories.filter((category) => {
-  const query = searchQuery.toLowerCase();
+    const query = searchQuery.toLowerCase();
 
-  // Match category name
-  const matchesCategory = category.name.toLowerCase().includes(query);
+    // Match category name
+    const matchesCategory = category.name.toLowerCase().includes(query);
 
-  // Match any service name within the category
-  const matchesService = category.services?.some((service) =>
-    service.name.toLowerCase().includes(query)
-  );
+    // Match any service name within the category
+    const matchesService = category.services?.some((service) =>
+      service.name.toLowerCase().includes(query)
+    );
 
-  return matchesCategory || matchesService;
-});
+    return matchesCategory || matchesService;
+  });
 
   const handleNewCustomerChange = (e) => {
     const { name, value } = e.target;
@@ -1405,7 +1511,8 @@ const membershipReductionUsed =
                     <p className="text-xs text-emerald-300">Administrator</p>
                   </div>
                 </div>
-                <button className="text-emerald-300 hover:text-white transition-colors"
+                <button
+                  className="text-emerald-300 hover:text-white transition-colors"
                   onClick={handleLogout}
                 >
                   <LogOut size={18} />
@@ -1420,7 +1527,7 @@ const membershipReductionUsed =
             </div>
           </motion.div>
         </nav>
-        
+
         {/* Main Content - Service Order */}
         <main className="flex-1 p-6 bg-gray-50 text-gray-900 ml-64">
           <motion.div
@@ -1511,39 +1618,44 @@ const membershipReductionUsed =
                             <h3 className="font-medium text-lg">
                               {customerName}
                             </h3>
-                            <div className="flex items-center mt-1">
+                            <div className="flex items-center mt-1 space-x-2">
                               {/* Member / Regular Customer badge */}
-          <span
-            className={`text-xs px-2 py-1 rounded-full ${
-              isMember && !selectedCustomer?.isExpired
-                ? "bg-emerald-100 text-emerald-800"
-                : selectedCustomer?.isExpired
-                ? "bg-red-100 text-red-800"
-                : "bg-gray-100 text-gray-800"
-            }`}
-          >
-            {selectedCustomer?.isExpired 
-              ? "Expired Member" 
-              : isMember 
-                ? "Member" 
-                : "Regular Customer"
-            }
-          </span>
+                              <span
+                                className={`text-xs px-2 py-1 rounded-full ${
+                                  isMember && !selectedCustomer?.isExpired
+                                    ? "bg-emerald-100 text-emerald-800"
+                                    : selectedCustomer?.isExpired
+                                      ? "bg-red-100 text-red-800"
+                                      : "bg-gray-100 text-gray-800"
+                                }`}
+                              >
+                                {selectedCustomer?.isExpired
+                                  ? "Expired Member"
+                                  : isMember
+                                    ? "Member"
+                                    : "Regular Customer"}
+                              </span>
+
+                              {/* 🆕 New Member badge - ADD THIS */}
+                              {isNewMember && (
+                                <span className="text-xs bg-gradient-to-r from-amber-100 to-yellow-100 text-amber-800 px-2 py-1 rounded-full border border-amber-300 font-semibold shadow-sm animate-pulse">
+                                  ✨ New Member
+                                </span>
+                              )}
 
                               {/* Expiration date (if applicable) */}
-          {isMember && membershipExpiration && (
-            <span className={`text-xs ml-2 ${
-              selectedCustomer?.isExpired ? 'text-red-600' : 'text-gray-500'
-            }`}>
-              {selectedCustomer?.isExpired ? 'Expired: ' : 'Expires: '} 
-              {formatDate(membershipExpiration)}
-            </span>
-          )}
-
-                              {/* 🆕 New Member badge */}
-                              {isNewMember && (
-                                <span className="text-xs ml-2 bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full font-medium animate-pulse">
-                                  New Member
+                              {isMember && membershipExpiration && (
+                                <span
+                                  className={`text-xs ${
+                                    selectedCustomer?.isExpired
+                                      ? "text-red-600"
+                                      : "text-gray-500"
+                                  }`}
+                                >
+                                  {selectedCustomer?.isExpired
+                                    ? "Expired: "
+                                    : "Expires: "}
+                                  {formatDate(membershipExpiration)}
                                 </span>
                               )}
                             </div>
@@ -1552,18 +1664,19 @@ const membershipReductionUsed =
                             onClick={() => {
                               setCustomerName("");
                               setIsMember(false);
+                              setIsNewMember(false);
                             }}
                             className="text-gray-500 hover:text-red-500"
                           >
                             <X size={18} />
                           </button>
                         </div>
-{/* Expiration Warning */}
-        {selectedCustomer?.isExpired && (
-          <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
-            ⚠️ Membership has expired. Benefits cannot be used.
-          </div>
-        )}
+                        {/* Expiration Warning */}
+                        {selectedCustomer?.isExpired && (
+                          <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
+                            ⚠️ Membership has expired. Benefits cannot be used.
+                          </div>
+                        )}
                         {isMember && (
                           <div className="mt-4 space-y-2">
                             <div className="flex justify-between text-sm">
@@ -1571,7 +1684,9 @@ const membershipReductionUsed =
                                 Membership Type:
                               </span>
                               <span className="font-medium">
-                                {membershipType}
+                                {selectedCustomer?.membershipDetails?.name
+                                  ? selectedCustomer.membershipDetails.name
+                                  : membershipType}
                               </span>
                             </div>
                             <div className="flex justify-between text-sm">
@@ -1612,28 +1727,30 @@ const membershipReductionUsed =
                         )}
                         {/* New toggle: Use membership benefits */}
                         {isMember && (
-      <div className="flex justify-between items-center text-sm mt-2">
-        <label
-          htmlFor="useMembership"
-          className={`${selectedCustomer?.isExpired ? 'text-gray-400' : 'text-gray-600'}`}
-        >
-          Use membership benefits
-          {selectedCustomer?.isExpired && " (Expired)"}
-        </label>
-        <input
-          id="useMembership"
-          type="checkbox"
-          checked={useMembership && !selectedCustomer?.isExpired}
-          onChange={(e) => {
-            if (!selectedCustomer?.isExpired) {
-              setUseMembership(e.target.checked);
-            }
-          }}
-          disabled={selectedCustomer?.isExpired}
-          className="accent-emerald-600 disabled:opacity-50"
-        />
-      </div>
-    )}
+                          <div className="flex justify-between items-center text-sm mt-2">
+                            <label
+                              htmlFor="useMembership"
+                              className={`${selectedCustomer?.isExpired ? "text-gray-400" : "text-gray-600"}`}
+                            >
+                              Use membership benefits
+                              {selectedCustomer?.isExpired && " (Expired)"}
+                            </label>
+                            <input
+                              id="useMembership"
+                              type="checkbox"
+                              checked={
+                                useMembership && !selectedCustomer?.isExpired
+                              }
+                              onChange={(e) => {
+                                if (!selectedCustomer?.isExpired) {
+                                  setUseMembership(e.target.checked);
+                                }
+                              }}
+                              disabled={selectedCustomer?.isExpired}
+                              className="accent-emerald-600 disabled:opacity-50"
+                            />
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
@@ -1754,14 +1871,14 @@ const membershipReductionUsed =
                       Service Categories
                     </h2>
                     <div className="mb-4">
-  <input
-    type="text"
-    placeholder="Search categories or services..."
-    value={searchQuery}
-    onChange={(e) => setSearchQuery(e.target.value)}
-    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-  />
-</div>
+                      <input
+                        type="text"
+                        placeholder="Search categories or services..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                      />
+                    </div>
                     <div className="space-y-2 max-h-[500px] overflow-y-auto">
                       {filteredCategories.map((category) => (
                         <motion.button
@@ -1884,167 +2001,188 @@ const membershipReductionUsed =
                 {/* Selected Services & Summary */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                   {/* Selected Services */}
-<div className="lg:col-span-2 bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-  {/* Header */}
-  <div className="flex justify-between items-center mb-4">
-    <h2 className="font-semibold text-gray-900 flex items-center text-lg">
-      <ShoppingCart className="mr-2" size={20} />
-      Selected Services
-      <span className="ml-2 bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-sm">
-        {selectedServices.length}
-      </span>
-    </h2>
-    {selectedServices.length > 0 && (
-      <button
-        onClick={() => {
-          setSelectedServices([]);
-          setSelectedPromoServices({});
-          setPromoApplied(null);
-          toast.info("All selected services cleared");
-        }}
-        className="text-sm text-red-600 hover:text-red-800 flex items-center transition-colors"
-      >
-        <Trash2 className="mr-1" size={16} />
-        Clear All
-      </button>
-    )}
-  </div>
+                  <div className="lg:col-span-2 bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                    {/* Header */}
+                    <div className="flex justify-between items-center mb-4">
+                      <h2 className="font-semibold text-gray-900 flex items-center text-lg">
+                        <ShoppingCart className="mr-2" size={20} />
+                        Selected Services
+                        <span className="ml-2 bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-sm">
+                          {selectedServices.length}
+                        </span>
+                      </h2>
+                      {selectedServices.length > 0 && (
+                        <button
+                          onClick={() => {
+                            setSelectedServices([]);
+                            setSelectedPromoServices({});
+                            setPromoApplied(null);
+                            toast.info("All selected services cleared");
+                          }}
+                          className="text-sm text-red-600 hover:text-red-800 flex items-center transition-colors"
+                        >
+                          <Trash2 className="mr-1" size={16} />
+                          Clear All
+                        </button>
+                      )}
+                    </div>
 
-  {/* Scrollable list */}
-  <div className="max-h-96 overflow-y-auto space-y-3 pr-2">
-    {selectedServices.length === 0 ? (
-      <div className="text-center py-8 text-gray-500">
-        <ShoppingCart size={48} className="mx-auto mb-3 text-gray-300" />
-        <p>No services selected yet</p>
-        <p className="text-sm mt-1">
-          Choose services from the list or browse promos
-        </p>
-      </div>
-    ) : (
-      // Ensure deduplication by service ID + bundleId
-      [...new Map(
-        selectedServices.map((s) => [s.id + (s.bundleId || ""), s])
-      ).values()].map((service, index) => (
-        <motion.div
-          key={`${service.id}-${index}`}
-          className="grid grid-cols-[auto_1fr_auto_auto] items-center gap-4 p-4 bg-white rounded-lg border border-gray-200 hover:border-blue-200 transition-colors"
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, x: 10 }}
-          transition={{ delay: index * 0.05 }}
-        >
-          {/* Remove button */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
+                    {/* Scrollable list */}
+                    <div className="max-h-96 overflow-y-auto space-y-3 pr-2">
+                      {selectedServices.length === 0 ? (
+                        <div className="text-center py-8 text-gray-500">
+                          <ShoppingCart
+                            size={48}
+                            className="mx-auto mb-3 text-gray-300"
+                          />
+                          <p>No services selected yet</p>
+                          <p className="text-sm mt-1">
+                            Choose services from the list or browse promos
+                          </p>
+                        </div>
+                      ) : (
+                        // Ensure deduplication by service ID + bundleId
+                        [
+                          ...new Map(
+                            selectedServices.map((s) => [
+                              s.id + (s.bundleId || ""),
+                              s,
+                            ])
+                          ).values(),
+                        ].map((service, index) => (
+                          <motion.div
+                            key={`${service.id}-${index}`}
+                            className="grid grid-cols-[auto_1fr_auto_auto] items-center gap-4 p-4 bg-white rounded-lg border border-gray-200 hover:border-blue-200 transition-colors"
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, x: 10 }}
+                            transition={{ delay: index * 0.05 }}
+                          >
+                            {/* Remove button */}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
 
-              if (service.isFromBundle && service.bundleId) {
-                // Remove all services from the same bundle
-                setSelectedServices((prev) =>
-                  prev.filter((s) => s.bundleId !== service.bundleId)
-                );
-                toast.info(`"${service.bundleName}" bundle removed from cart`);
-              } else {
-                // Remove single service
-                removeService(service.id);
+                                if (service.isFromBundle && service.bundleId) {
+                                  // Remove all services from the same bundle
+                                  setSelectedServices((prev) =>
+                                    prev.filter(
+                                      (s) => s.bundleId !== service.bundleId
+                                    )
+                                  );
+                                  toast.info(
+                                    `"${service.bundleName}" bundle removed from cart`
+                                  );
+                                } else {
+                                  // Remove single service
+                                  removeService(service.id);
 
-                // Also remove from selectedPromoServices if it's from a promo
-                if (service.isFromPromo && service.promoId) {
-                  setSelectedPromoServices((prev) => ({
-                    ...prev,
-                    [service.promoId]: {
-                      ...prev[service.promoId],
-                      [service.id]: false,
-                    },
-                  }));
-                }
-              }
-            }}
-            className="text-red-500 hover:text-red-700 transition-colors p-1 rounded"
-          >
-            <X size={18} />
-          </button>
+                                  // Also remove from selectedPromoServices if it's from a promo
+                                  if (service.isFromPromo && service.promoId) {
+                                    setSelectedPromoServices((prev) => ({
+                                      ...prev,
+                                      [service.promoId]: {
+                                        ...prev[service.promoId],
+                                        [service.id]: false,
+                                      },
+                                    }));
+                                  }
+                                }
+                              }}
+                              className="text-red-500 hover:text-red-700 transition-colors p-1 rounded"
+                            >
+                              <X size={18} />
+                            </button>
 
-          {/* Service info */}
-          <div className="min-w-0">
-            <p className="font-medium text-gray-900 truncate">
-              {service.name}
-            </p>
-            <div className="flex items-center space-x-2 mt-1">
-              <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                {serviceCategories.find((cat) =>
-                  cat.services.some((s) => s.id === service.id)
-                )?.name || "General"}
-              </span>
-              {service.isFromPromo && (
-                <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                  Promo Discount
-                </span>
-              )}
-              {service.isFromBundle && (
-                <span className="text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded">
-                  Bundle
-                </span>
-              )}
-            </div>
-          </div>
+                            {/* Service info */}
+                            <div className="min-w-0">
+                              <p className="font-medium text-gray-900 truncate">
+                                {service.name}
+                              </p>
+                              <div className="flex items-center space-x-2 mt-1">
+                                <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                                  {serviceCategories.find((cat) =>
+                                    cat.services.some(
+                                      (s) => s.id === service.id
+                                    )
+                                  )?.name || "General"}
+                                </span>
+                                {service.isFromPromo && (
+                                  <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                                    Promo Discount
+                                  </span>
+                                )}
+                                {service.isFromBundle && (
+                                  <span className="text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded">
+                                    Bundle
+                                  </span>
+                                )}
+                              </div>
+                            </div>
 
-          {/* Quantity controls — hide for bundle services */}
-          {!service.isFromBundle && (
-            <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-1">
-              <button
-                onClick={() =>
-                  updateQuantity(service.id, service.quantity - 1)
-                }
-                className="w-8 h-8 flex items-center justify-center bg-white border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={service.quantity === 1}
-              >
-                -
-              </button>
-              <span className="w-8 text-center font-medium text-gray-900">
-                {service.quantity}
-              </span>
-              <button
-                onClick={() =>
-                  updateQuantity(service.id, service.quantity + 1)
-                }
-                className="w-8 h-8 flex items-center justify-center bg-white border border-gray-300 rounded hover:bg-gray-100"
-              >
-                +
-              </button>
-            </div>
-          )}
+                            {/* Quantity controls — hide for bundle services */}
+                            {!service.isFromBundle && (
+                              <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-1">
+                                <button
+                                  onClick={() =>
+                                    updateQuantity(
+                                      service.id,
+                                      service.quantity - 1
+                                    )
+                                  }
+                                  className="w-8 h-8 flex items-center justify-center bg-white border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                                  disabled={service.quantity === 1}
+                                >
+                                  -
+                                </button>
+                                <span className="w-8 text-center font-medium text-gray-900">
+                                  {service.quantity}
+                                </span>
+                                <button
+                                  onClick={() =>
+                                    updateQuantity(
+                                      service.id,
+                                      service.quantity + 1
+                                    )
+                                  }
+                                  className="w-8 h-8 flex items-center justify-center bg-white border border-gray-300 rounded hover:bg-gray-100"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            )}
 
-          {/* Price */}
-          <div className="text-right min-w-24">
-            <div className="font-bold text-gray-900">
-              ₱
-              {(
-                (service.isFromBundle ? service.price : service.price * service.quantity)
-              ).toLocaleString("en-PH", {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}
-            </div>
-            {service.originalPrice &&
-              service.originalPrice > service.price && (
-                <div className="text-xs text-gray-500 line-through">
-                  ₱
-                  {(
-                    (service.isFromBundle ? service.originalPrice : service.originalPrice * service.quantity)
-                  ).toLocaleString("en-PH", {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
-                </div>
-              )}
-          </div>
-        </motion.div>
-      ))
-    )}
-  </div>
-</div>
-
+                            {/* Price */}
+                            <div className="text-right min-w-24">
+                              <div className="font-bold text-gray-900">
+                                ₱
+                                {(service.isFromBundle
+                                  ? service.price
+                                  : service.price * service.quantity
+                                ).toLocaleString("en-PH", {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}
+                              </div>
+                              {service.originalPrice &&
+                                service.originalPrice > service.price && (
+                                  <div className="text-xs text-gray-500 line-through">
+                                    ₱
+                                    {(service.isFromBundle
+                                      ? service.originalPrice
+                                      : service.originalPrice * service.quantity
+                                    ).toLocaleString("en-PH", {
+                                      minimumFractionDigits: 2,
+                                      maximumFractionDigits: 2,
+                                    })}
+                                  </div>
+                                )}
+                            </div>
+                          </motion.div>
+                        ))
+                      )}
+                    </div>
+                  </div>
 
                   {/* Order Summary */}
                   <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
@@ -2111,12 +2249,11 @@ const membershipReductionUsed =
                           <span>Total:</span>
                           <span>
                             {formatCurrency(
-  calculatedSubtotal -
-    promoReduction -
-    discountReduction -
-    membershipReductionUsed
-)}
-
+                              calculatedSubtotal -
+                                promoReduction -
+                                discountReduction -
+                                membershipReductionUsed
+                            )}
                           </span>
                         </div>
                       </div>
@@ -2239,26 +2376,35 @@ const membershipReductionUsed =
                                 </div>
 
                                 {/* 🔍 Search Bar */}
-<div className="mb-4">
-  <input
-    type="text"
-    placeholder="Search promotions..."
-    value={promoSearch}
-    onChange={(e) => setPromoSearch(e.target.value)}
-    className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-700"
-  />
-</div>
-
+                                <div className="mb-4">
+                                  <input
+                                    type="text"
+                                    placeholder="Search promotions..."
+                                    value={promoSearch}
+                                    onChange={(e) =>
+                                      setPromoSearch(e.target.value)
+                                    }
+                                    className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-700"
+                                  />
+                                </div>
 
                                 <div className="grid gap-6 max-h-[70vh] overflow-y-auto pr-2">
                                   {promos
                                     .filter(
-  (p) =>
-    p.status === "active" &&
-    (!promoSearch ||
-      p.name.toLowerCase().includes(promoSearch.toLowerCase()) ||
-      p.description?.toLowerCase().includes(promoSearch.toLowerCase()))
-)
+                                      (p) =>
+                                        p.status === "active" &&
+                                        (!promoSearch ||
+                                          p.name
+                                            .toLowerCase()
+                                            .includes(
+                                              promoSearch.toLowerCase()
+                                            ) ||
+                                          p.description
+                                            ?.toLowerCase()
+                                            .includes(
+                                              promoSearch.toLowerCase()
+                                            ))
+                                    )
 
                                     .map((promo) => (
                                       <motion.div
@@ -2583,26 +2729,35 @@ const membershipReductionUsed =
                                 </div>
 
                                 {/* 🔍 Search Bar */}
-<div className="mb-4">
-  <input
-    type="text"
-    placeholder="Search Bundles..."
-    value={bundleSearch}
-    onChange={(e) => setBundleSearch(e.target.value)}
-    className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-700"
-  />
-</div>
-
+                                <div className="mb-4">
+                                  <input
+                                    type="text"
+                                    placeholder="Search Bundles..."
+                                    value={bundleSearch}
+                                    onChange={(e) =>
+                                      setBundleSearch(e.target.value)
+                                    }
+                                    className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-700"
+                                  />
+                                </div>
 
                                 <div className="grid gap-6 max-h-[70vh] overflow-y-auto pr-2">
                                   {bundles
                                     .filter(
-  (p) =>
-    p.status === "active" &&
-    (!bundleSearch ||
-      p.name.toLowerCase().includes(bundleSearch.toLowerCase()) ||
-      p.description?.toLowerCase().includes(bundleSearch.toLowerCase()))
-)
+                                      (p) =>
+                                        p.status === "active" &&
+                                        (!bundleSearch ||
+                                          p.name
+                                            .toLowerCase()
+                                            .includes(
+                                              bundleSearch.toLowerCase()
+                                            ) ||
+                                          p.description
+                                            ?.toLowerCase()
+                                            .includes(
+                                              bundleSearch.toLowerCase()
+                                            ))
+                                    )
 
                                     .map((bundle) => (
                                       <motion.div
@@ -2858,27 +3013,41 @@ const membershipReductionUsed =
                         <span className="font-medium">{customerName}</span>
                       </div>
                       {isMember && (
-  <>
-    <div className="flex justify-between">
-      <span className="text-gray-600">Membership Type:</span>
-      <span className="font-medium">{membershipType}</span>
-    </div>
-    {membershipBalanceDeduction > 0 && (
-      <div className="flex justify-between text-sm">
-        <span className="text-gray-600">Balance Deduction:</span>
-        <span className="font-medium text-red-600">
-          -₱{membershipBalanceDeduction.toLocaleString()}
-        </span>
-      </div>
-    )}
-    <div className="flex justify-between text-sm font-semibold border-t pt-2">
-      <span className="text-gray-700">New Balance After Purchase:</span>
-      <span className="text-emerald-600">
-        ₱{Math.max(0, membershipBalance - membershipBalanceDeduction).toLocaleString()}
-      </span>
-    </div>
-  </>
-)}
+                        <>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">
+                              Membership Type:
+                            </span>
+                            <span className="font-medium">
+                              {selectedCustomer?.membershipDetails?.name
+                                ? selectedCustomer.membershipDetails.name
+                                : membershipType}
+                            </span>
+                          </div>
+                          {membershipBalanceDeduction > 0 && (
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-600">
+                                Balance Deduction:
+                              </span>
+                              <span className="font-medium text-red-600">
+                                -₱{membershipBalanceDeduction.toLocaleString()}
+                              </span>
+                            </div>
+                          )}
+                          <div className="flex justify-between text-sm font-semibold border-t pt-2">
+                            <span className="text-gray-700">
+                              New Balance After Purchase:
+                            </span>
+                            <span className="text-emerald-600">
+                              ₱
+                              {Math.max(
+                                0,
+                                membershipBalance - membershipBalanceDeduction
+                              ).toLocaleString()}
+                            </span>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
 
@@ -2928,26 +3097,29 @@ const membershipReductionUsed =
                       )}
 
                       {/* Membership */}
-{isMember && useMembership && (
-  <>
-    {/* Show 50% discount for regular members */}
-    {!isNewMember && membershipDiscountAmount > 0 && (
-      <div className="flex justify-between text-emerald-600">
-        <span>Membership Discount (50%):</span>
-        <span>-{formatCurrency(membershipDiscountAmount)}</span>
-      </div>
-    )}
-    
-    {/* Show balance deduction for new members with balance */}
-    {isNewMember && membershipBalanceDeduction > 0 && (
-      <div className="flex justify-between text-emerald-600">
-        <span>Membership Balance Used:</span>
-        <span>-{formatCurrency(membershipBalanceDeduction)}</span>
-      </div>
-    )}
-  </>
-)}
-                      
+                      {isMember && useMembership && (
+                        <>
+                          {/* Show 50% discount for regular members */}
+                          {!isNewMember && membershipDiscountAmount > 0 && (
+                            <div className="flex justify-between text-emerald-600">
+                              <span>Membership Discount (50%):</span>
+                              <span>
+                                -{formatCurrency(membershipDiscountAmount)}
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Show balance deduction for new members with balance */}
+                          {isNewMember && membershipBalanceDeduction > 0 && (
+                            <div className="flex justify-between text-emerald-600">
+                              <span>Membership Balance Used:</span>
+                              <span>
+                                -{formatCurrency(membershipBalanceDeduction)}
+                              </span>
+                            </div>
+                          )}
+                        </>
+                      )}
 
                       {/* Total */}
                       <div className="border-t pt-3 mt-3">
@@ -2955,11 +3127,11 @@ const membershipReductionUsed =
                           <span>Total:</span>
                           <span>
                             {formatCurrency(
-  calculatedSubtotal -
-    promoReduction -
-    discountReduction -
-    membershipReductionUsed
-)}
+                              calculatedSubtotal -
+                                promoReduction -
+                                discountReduction -
+                                membershipReductionUsed
+                            )}
                           </span>
                         </div>
                       </div>
@@ -3222,22 +3394,25 @@ const membershipReductionUsed =
                       )}
 
                       {/* Membership */}
-{(savedOrderData.membershipDiscount ?? 0) > 0 && (
-  <div className="flex justify-between text-emerald-600">
-    <span>Membership Discount (50%):</span>
-    <span className="tabular-nums">
-      -{formatCurrency(savedOrderData.membershipDiscount)}
-    </span>
-  </div>
-)}
-{(savedOrderData.membershipBalanceDeduction ?? 0) > 0 && (
-  <div className="flex justify-between text-emerald-600">
-    <span>Membership Balance Used:</span>
-    <span className="tabular-nums">
-      -{formatCurrency(savedOrderData.membershipBalanceDeduction)}
-    </span>
-  </div>
-)}
+                      {(savedOrderData.membershipDiscount ?? 0) > 0 && (
+                        <div className="flex justify-between text-emerald-600">
+                          <span>Membership Discount (50%):</span>
+                          <span className="tabular-nums">
+                            -{formatCurrency(savedOrderData.membershipDiscount)}
+                          </span>
+                        </div>
+                      )}
+                      {(savedOrderData.membershipBalanceDeduction ?? 0) > 0 && (
+                        <div className="flex justify-between text-emerald-600">
+                          <span>Membership Balance Used:</span>
+                          <span className="tabular-nums">
+                            -
+                            {formatCurrency(
+                              savedOrderData.membershipBalanceDeduction
+                            )}
+                          </span>
+                        </div>
+                      )}
 
                       {/* Total */}
                       <div className="border-t pt-3 mt-3">
@@ -3375,39 +3550,56 @@ const membershipReductionUsed =
                                 .toLowerCase()
                                 .includes(searchTerm.toLowerCase())
                             )
-                            .map((customer) => (
-                              <motion.li
-                                key={customer.id}
-                                className="p-4 hover:bg-gray-50 cursor-pointer"
-                                whileHover={{ backgroundColor: "#f9fafb" }}
-                                onClick={() => handleCustomerSelect(customer)}
-                                initial={{ opacity: 0, y: 10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ type: "spring" }}
-                              >
-                                <div className="flex justify-between items-center">
-                                  <div>
-                                    <div className="font-medium">
-                                      {customer.name}
+                            .map((customer) => {
+                              const isNewMember =
+                                shouldShowNewMemberBadge(customer);
+                              return (
+                                <motion.li
+                                  key={customer.id}
+                                  className="p-4 hover:bg-gray-50 cursor-pointer"
+                                  whileHover={{ backgroundColor: "#f9fafb" }}
+                                  onClick={() => handleCustomerSelect(customer)}
+                                  initial={{ opacity: 0, y: 10 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  transition={{ type: "spring" }}
+                                >
+                                  <div className="flex justify-between items-center">
+                                    <div>
+                                      <div className="font-medium flex items-center gap-2">
+                                        {customer.name}
+                                        {/* 🆕 New Member badge in customer list */}
+                                        {isNewMember && (
+                                          <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded-full font-medium animate-pulse">
+                                            New Member
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="text-sm text-gray-500">
+                                        {customer.phone}
+                                      </div>
                                     </div>
-                                    <div className="text-sm text-gray-500">
-                                      {customer.phone}
+                                    <div className="text-right">
+                                      {customer.isMember ? (
+                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
+                                          {customer.membershipDetails?.name
+                                            ? customer.membershipDetails.name
+                                            : customer.membershipType === "pro"
+                                              ? "Pro Member"
+                                              : customer.membershipType ===
+                                                  "basic"
+                                                ? "Basic Member"
+                                                : `${customer.membershipType} Member`}
+                                        </span>
+                                      ) : (
+                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                          Regular Customer
+                                        </span>
+                                      )}
                                     </div>
                                   </div>
-                                  <div className="text-right">
-                                    {customer.isMember ? (
-                                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
-                                        {customer.membershipType} Member
-                                      </span>
-                                    ) : (
-                                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                                        Regular Customer
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                              </motion.li>
-                            ))}
+                                </motion.li>
+                              );
+                            })}
                         </ul>
                       ) : (
                         <div className="flex flex-col items-center justify-center p-8 text-gray-500">
@@ -3989,12 +4181,19 @@ const membershipReductionUsed =
                       </button>
                     </div>
 
-                    <form onSubmit={(e) => { e.preventDefault(); handleMembershipUpgrade(); }} className="flex-1 overflow-y-auto">
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        handleMembershipUpgrade();
+                      }}
+                      className="flex-1 overflow-y-auto"
+                    >
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         {/* Membership Type */}
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Membership Type <span className="text-red-500">*</span>
+                            Membership Type{" "}
+                            <span className="text-red-500">*</span>
                           </label>
                           <select
                             value={upgradeMembershipForm.type}
@@ -4053,7 +4252,8 @@ const membershipReductionUsed =
                         {/* Payment Method */}
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Payment Method <span className="text-red-500">*</span>
+                            Payment Method{" "}
+                            <span className="text-red-500">*</span>
                           </label>
                           <select
                             value={upgradeMembershipForm.paymentMethod || ""}

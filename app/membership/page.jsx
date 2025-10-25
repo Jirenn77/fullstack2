@@ -68,21 +68,31 @@ export default function Memberships() {
   };
 
   const fetchMemberships = async () => {
-    try {
-      const res = await fetch("http://localhost/API/memberships.php");
-      const data = await res.json();
+  try {
+    const res = await fetch("http://localhost/API/memberships.php");
+    const data = await res.json();
 
-      if (Array.isArray(data)) {
-        setMemberships(data);
-      } else {
-        toast.error("Invalid data format from server.");
-        console.error("Expected array, got:", data);
-      }
-    } catch (error) {
-      toast.error("Failed to load memberships.");
-      console.error("Fetch error:", error);
+    // If we get an error object instead of array, show the error
+    if (data && data.error) {
+      toast.error(`Server error: ${data.error}`);
+      console.error("Server error:", data.error);
+      setMemberships([]); // Set empty array to avoid crashes
+      return;
     }
-  };
+
+    if (Array.isArray(data)) {
+      setMemberships(data);
+    } else {
+      toast.error("Invalid data format from server.");
+      console.error("Expected array, got:", data);
+      setMemberships([]); // Set empty array to avoid crashes
+    }
+  } catch (error) {
+    toast.error("Failed to load memberships.");
+    console.error("Fetch error:", error);
+    setMemberships([]); // Set empty array to avoid crashes
+  }
+};
 
   useEffect(() => {
     fetchMemberships();
@@ -288,23 +298,9 @@ export default function Memberships() {
   }
 
   try {
-    // Use selectedServices instead of fetching
-    const includedServices = selectedServices.map(service => ({
-      id: service.id,
-      name: service.name,
-      duration: service.duration,
-      originalPrice: service.originalPrice,
-      price: service.price,
-      discountedPrice: service.discountedPrice,
-      discountPercentage: service.discountPercentage,
-      description: service.description,
-      category: service.category,
-      membershipType: service.membershipType || editMembership.type,
-    }));
-
     const membershipToSend = {
       ...editMembership,
-      included_services: includedServices,
+      included_services: selectedServices, // Send the full service objects
       discount:
         editMembership.type === "pro"
           ? "50"
@@ -325,10 +321,9 @@ export default function Memberships() {
 
     const updated = await res.json();
 
-    // Keep the original type instead of deriving from discount
     const updatedWithType = {
       ...updated,
-      type: editMembership.type, // Use the original type from editMembership
+      type: editMembership.type,
     };
 
     setMemberships((prev) =>
@@ -337,7 +332,7 @@ export default function Memberships() {
 
     // Update the services display if this is the currently selected membership
     if (selectedMembership?.id === updatedWithType.id) {
-      setMembershipServices(includedServices);
+      setMembershipServices(selectedServices); // Use selectedServices instead of includedServices
     }
 
     setEditMembership(null);
@@ -354,28 +349,39 @@ export default function Memberships() {
   };
 
   const handleRowClick = async (membership) => {
-    // Determine membership type based on name or other attribute
-    const membershipType = membership.name.toLowerCase().includes("pro")
-      ? "pro"
-      : "basic";
+  setSelectedMembership(membership);
+  setIsLoadingServices(true);
 
-    setSelectedMembership({
-      ...membership,
-      type: membershipType, // Make sure this is either 'basic' or 'pro'
-    });
-
-    setIsLoadingServices(true);
-
-    try {
-      const services = await fetchPremiumServices(membershipType);
+  try {
+    // Use the included_services from the membership data
+    if (membership.included_services && membership.included_services.length > 0) {
+      // Format the services to match the expected structure
+      const formattedServices = membership.included_services.map(service => ({
+        id: service.service_id,
+        name: service.name,
+        duration: service.duration ? `${service.duration} mins` : "N/A",
+        originalPrice: parseFloat(service.price) || 0,
+        price: `₱${parseFloat(service.price || 0).toFixed(2)}`,
+        discountedPrice: service.price ? parseFloat(service.price) * 0.5 : 0, // 50% discount
+        discountPercentage: "50%",
+        description: service.description || "No description available",
+        category: service.category || "Uncategorized",
+        membershipType: membership.type,
+      }));
+      setMembershipServices(formattedServices);
+    } else {
+      // Fallback to fetching premium services if no included services
+      const services = await fetchPremiumServices(membership.type);
       setMembershipServices(services);
-    } catch (error) {
-      console.error("Error loading services:", error);
-      toast.error("Failed to load services");
-    } finally {
-      setIsLoadingServices(false);
     }
-  };
+  } catch (error) {
+    console.error("Error loading services:", error);
+    toast.error("Failed to load services");
+    setMembershipServices([]);
+  } finally {
+    setIsLoadingServices(false);
+  }
+};
 
   const closeMembershipDetails = () => {
     setSelectedMembership(null);
@@ -1597,212 +1603,257 @@ export default function Memberships() {
             )}
           </AnimatePresence>
 
-          {/* Membership Details Modal */}
-          <AnimatePresence>
-            {selectedMembership && (
-              <motion.div
-                className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-              >
+            {/* Membership Details Modal */}
+            <AnimatePresence>
+              {selectedMembership && (
                 <motion.div
-                  className="bg-white rounded-lg shadow-lg p-6 w-full max-w-4xl max-h-[90vh] flex flex-col"
-                  variants={scaleUp}
-                  initial="hidden"
-                  animate="visible"
-                  exit="exit"
+                  className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
                 >
-                  {/* Header */}
-                  <div className="flex justify-between items-start mb-4">
-                    <div>
-                      <h2 className="text-xl font-bold">
-                        {selectedMembership.name} Membership
-                      </h2>
-                      <p className="text-sm text-gray-600">
-                        Discount: {selectedMembership.discount} | Status:
-                        <span
-                          className={`ml-2 px-2 py-1 rounded-full text-xs ${
-                            selectedMembership.status === "active"
-                              ? "bg-green-100 text-green-800"
-                              : "bg-gray-200 text-gray-800"
-                          }`}
-                        >
-                          {selectedMembership.status}
-                        </span>
-                      </p>
-                    </div>
-                    <motion.button
-                      onClick={closeMembershipDetails}
-                      className="text-gray-500 hover:text-gray-700"
-                      whileHover={{ rotate: 90 }}
-                      whileTap={{ scale: 0.9 }}
-                    >
-                      <X size={24} />
-                    </motion.button>
-                  </div>
-
-                  {/* Main Content */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 flex-1 overflow-hidden">
-                    {/* Membership Info Sidebar */}
-                    <div className="space-y-6">
-                      <div className="bg-gray-50 p-4 rounded-lg">
-                        <h3 className="font-bold mb-3 text-lg">Details</h3>
-                        <div className="space-y-2 text-sm">
-                          <p>
-                            <span className="font-semibold">Description:</span>{" "}
-                            {selectedMembership.description}
-                          </p>
-                          <p>
-                            <span className="font-semibold">Value:</span>{" "}
-                            {Number(
-                              selectedMembership.consumable_amount
-                            ).toLocaleString()}{" "}
-                            consumable for ₱
-                            {Number(selectedMembership.price).toLocaleString()}
-                          </p>
-                          <p>
-                            <span className="font-semibold">Discount:</span>{" "}
-                            {selectedMembership.discount} on all services
-                          </p>
-                          <p>
-                            <span className="font-semibold">Expiration:</span>{" "}
-                            {selectedMembership.type?.toLowerCase() === "promo"
-                              ? selectedMembership.expire_date
-                                ? new Date(
-                                    selectedMembership.expire_date
-                                  ).toLocaleDateString()
-                                : "No expiration date set"
-                              : "No expiration"}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="bg-gray-50 p-4 rounded-lg">
-                        <h3 className="font-bold mb-3 text-lg">Quick Stats</h3>
-                        <div className="space-y-2 text-sm">
-                          <p>
-                            <span className="font-semibold">
-                              Total Services:
-                            </span>{" "}
-                            {membershipServices.length}
-                          </p>
-                          <p>
-                            <span className="font-semibold">Categories:</span>{" "}
-                            {
-                              Array.from(
-                                new Set(
-                                  membershipServices.map((s) => s.category)
-                                )
-                              ).length
-                            }
-                          </p>
-                          <p>
-                            <span className="font-semibold">Avg. Price:</span> ₱
-                            {(
-                              membershipServices.reduce(
-                                (sum, s) =>
-                                  sum +
-                                  parseFloat(
-                                    s.price.replace("₱", "").replace(/,/g, "")
-                                  ),
-                                0
-                              ) / membershipServices.length || 0
-                            ).toLocaleString(undefined, {
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 2,
-                            })}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Services Main Panel */}
-                    <div className="md:col-span-2 flex flex-col overflow-hidden">
-                      <div className="flex justify-between items-center mb-4">
-                        <h3 className="font-bold text-lg">
-                          Included Services{" "}
-                          <span className="text-sm font-normal">
-                            ({membershipServices.length})
-                          </span>
-                        </h3>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => setShowSummary(!showSummary)}
-                            className="text-sm text-green-600 hover:underline"
-                            disabled={membershipServices.length === 0}
+                  <motion.div
+                    className="bg-white rounded-lg shadow-lg p-6 w-full max-w-4xl max-h-[90vh] flex flex-col"
+                    variants={scaleUp}
+                    initial="hidden"
+                    animate="visible"
+                    exit="exit"
+                  >
+                    {/* Header */}
+                    <div className="flex justify-between items-start mb-4">
+                      <div>
+                        <h2 className="text-xl font-bold">
+                          {selectedMembership.name} Membership
+                        </h2>
+                        <p className="text-sm text-gray-600">
+                          Discount: {selectedMembership.discount} | Status:
+                          <span
+                            className={`ml-2 px-2 py-1 rounded-full text-xs ${
+                              selectedMembership.status === "active"
+                                ? "bg-green-100 text-green-800"
+                                : "bg-gray-200 text-gray-800"
+                            }`}
                           >
-                            {showSummary ? "Show Details" : "Show Summary"}
-                          </button>
-                        </div>
+                            {selectedMembership.status}
+                          </span>
+                        </p>
                       </div>
+                      <motion.button
+                        onClick={closeMembershipDetails}
+                        className="text-gray-500 hover:text-gray-700"
+                        whileHover={{ rotate: 90 }}
+                        whileTap={{ scale: 0.9 }}
+                      >
+                        <X size={24} />
+                      </motion.button>
+                    </div>
 
-                      {/* Filter Controls */}
-                      <div className="mb-4 flex flex-wrap gap-2">
-                        <input
-                          type="text"
-                          placeholder="Search services..."
-                          className="px-3 py-1 border rounded-md text-sm flex-1 min-w-[200px]"
-                          onChange={(e) => setSearchTerm(e.target.value)}
-                          value={searchTerm}
-                          disabled={membershipServices.length === 0}
-                        />
-                        <select
-                          className="px-3 py-1 border rounded-md text-sm"
-                          onChange={(e) => setCategoryFilter(e.target.value)}
-                          value={categoryFilter}
-                          disabled={membershipServices.length === 0}
-                        >
-                          <option value="">All Categories</option>
-                          {Array.from(
-                            new Set(membershipServices.map((s) => s.category))
-                          ).map((category) => (
-                            <option key={category} value={category}>
-                              {category}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                    {/* Main Content */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 flex-1 overflow-hidden">
+                      {/* Membership Info Sidebar */}
+<div className="space-y-6">
+  <div className="bg-gray-50 p-4 rounded-lg">
+    <h3 className="font-bold mb-3 text-lg">Membership Details</h3>
+    <div className="space-y-3 text-sm">
+      <div>
+        <span className="font-semibold block text-gray-700">Description:</span>
+        <span className="text-gray-600">{selectedMembership.description}</span>
+      </div>
+      
+      <div>
+        <span className="font-semibold block text-gray-700">Value:</span>
+        <span className="text-gray-600">
+          {Number(selectedMembership.consumable_amount).toLocaleString()} consumable for ₱
+          {Number(selectedMembership.price).toLocaleString()}
+        </span>
+      </div>
+      
+      <div>
+        <span className="font-semibold block text-gray-700">Discount:</span>
+        <span className="text-gray-600">{selectedMembership.discount} on all services</span>
+      </div>
+      
+      {/* Date Information Section */}
+      <div className="border-t pt-3 mt-3">
+        <span className="font-semibold block text-gray-700 mb-2">Date Information:</span>
+        
+        <div className="space-y-2 pl-2">
+          <div className="flex justify-between">
+            <span className="text-gray-600">Registered:</span>
+            <span className="font-medium">
+              {selectedMembership.date_registered 
+                ? new Date(selectedMembership.date_registered).toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                  })
+                : "Not available"}
+            </span>
+          </div>
+          
+          <div className="flex justify-between">
+            <span className="text-gray-600">Expires:</span>
+            <span className={`font-medium ${
+              selectedMembership.valid_until && 
+              new Date(selectedMembership.valid_until) < new Date() 
+                ? 'text-red-600' 
+                : 'text-green-600'
+            }`}>
+              {selectedMembership.valid_until 
+                ? new Date(selectedMembership.valid_until).toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                  })
+                : "No expiration"}
+            </span>
+          </div>
+          
+          {/* Optional: Show days remaining for expired memberships */}
+          {selectedMembership.valid_until && (
+            <div className="flex justify-between text-xs">
+              <span className="text-gray-500">Status:</span>
+              <span className={
+                new Date(selectedMembership.valid_until) < new Date() 
+                  ? 'text-red-500 font-medium' 
+                  : 'text-green-500'
+              }>
+                {new Date(selectedMembership.valid_until) < new Date() 
+                  ? 'Expired' 
+                  : 'Active'}
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  </div>
 
-                      {/* Services Display */}
-                      <div className="flex-1 overflow-auto">
-                        {isLoadingServices ? (
-                          <div className="flex justify-center items-center h-full">
-                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-500"></div>
-                          </div>
-                        ) : membershipServices.length === 0 ? (
-                          <div className="flex flex-col items-center justify-center h-full text-gray-500">
-                            <Package className="w-12 h-12 mb-4" />
-                            <p>No services included in this membership</p>
-                            <p className="text-sm mt-1">
-                              Premium services will appear here
+                        <div className="bg-gray-50 p-4 rounded-lg">
+                          <h3 className="font-bold mb-3 text-lg">Quick Stats</h3>
+                          <div className="space-y-2 text-sm">
+                            <p>
+                              <span className="font-semibold">
+                                Total Services:
+                              </span>{" "}
+                              {membershipServices.length}
+                            </p>
+                            <p>
+                              <span className="font-semibold">Categories:</span>{" "}
+                              {
+                                Array.from(
+                                  new Set(
+                                    membershipServices.map((s) => s.category)
+                                  )
+                                ).length
+                              }
+                            </p>
+                            <p>
+                              <span className="font-semibold">Avg. Price:</span> ₱
+                              {(
+                                membershipServices.reduce(
+                                  (sum, s) =>
+                                    sum +
+                                    parseFloat(
+                                      s.price.replace("₱", "").replace(/,/g, "")
+                                    ),
+                                  0
+                                ) / membershipServices.length || 0
+                              ).toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
                             </p>
                           </div>
-                        ) : showSummary ? (
-                          <SummaryView
-                            services={membershipServices}
-                            searchTerm={searchTerm}
-                            categoryFilter={categoryFilter}
-                            membershipType={selectedMembership?.type || "basic"}
+                        </div>
+                      </div>
+
+                      {/* Services Main Panel */}
+                      <div className="md:col-span-2 flex flex-col overflow-hidden">
+                        <div className="flex justify-between items-center mb-4">
+                          <h3 className="font-bold text-lg">
+                            Included Services{" "}
+                            <span className="text-sm font-normal">
+                              ({membershipServices.length})
+                            </span>
+                          </h3>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => setShowSummary(!showSummary)}
+                              className="text-sm text-green-600 hover:underline"
+                              disabled={membershipServices.length === 0}
+                            >
+                              {showSummary ? "Show Details" : "Show Summary"}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Filter Controls */}
+                        <div className="mb-4 flex flex-wrap gap-2">
+                          <input
+                            type="text"
+                            placeholder="Search services..."
+                            className="px-3 py-1 border rounded-md text-sm flex-1 min-w-[200px]"
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            value={searchTerm}
+                            disabled={membershipServices.length === 0}
                           />
-                        ) : (
-                          <DetailedView
-                            services={membershipServices}
-                            searchTerm={searchTerm}
-                            categoryFilter={categoryFilter}
-                            membershipType={selectedMembership?.type || "basic"}
-                            currentPage={currentPage}
-                            servicesPerPage={servicesPerPage}
-                            setCurrentPage={setCurrentPage}
-                          />
-                        )}
+                          <select
+                            className="px-3 py-1 border rounded-md text-sm"
+                            onChange={(e) => setCategoryFilter(e.target.value)}
+                            value={categoryFilter}
+                            disabled={membershipServices.length === 0}
+                          >
+                            <option value="">All Categories</option>
+                            {Array.from(
+                              new Set(membershipServices.map((s) => s.category))
+                            ).map((category) => (
+                              <option key={category} value={category}>
+                                {category}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Services Display */}
+                        <div className="flex-1 overflow-auto">
+                          {isLoadingServices ? (
+                            <div className="flex justify-center items-center h-full">
+                              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-500"></div>
+                            </div>
+                          ) : membershipServices.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center h-full text-gray-500">
+                              <Package className="w-12 h-12 mb-4" />
+                              <p>No services included in this membership</p>
+                              <p className="text-sm mt-1">
+                                Premium services will appear here
+                              </p>
+                            </div>
+                          ) : showSummary ? (
+                            <SummaryView
+                              services={membershipServices}
+                              searchTerm={searchTerm}
+                              categoryFilter={categoryFilter}
+                              membershipType={selectedMembership?.type || "basic"}
+                            />
+                          ) : (
+                            <DetailedView
+                              services={membershipServices}
+                              searchTerm={searchTerm}
+                              categoryFilter={categoryFilter}
+                              membershipType={selectedMembership?.type || "basic"}
+                              currentPage={currentPage}
+                              servicesPerPage={servicesPerPage}
+                              setCurrentPage={setCurrentPage}
+                            />
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  </motion.div>
                 </motion.div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+              )}
+            </AnimatePresence>
         </main>
       </div>
     </div>

@@ -228,9 +228,102 @@ export default function ServiceOrderPage() {
     }
   };
 
+  const fetchCustomersWithMembership = async () => {
+    try {
+      setIsCustomersLoading(true);
+
+      const customersRes = await fetch("http://localhost/API/customers.php");
+      if (!customersRes.ok) throw new Error("Failed to fetch customers");
+      const customersData = await customersRes.json();
+
+      const membershipsRes = await fetch("http://localhost/API/members.php");
+      const membershipsData = await membershipsRes.json();
+
+      // Fetch membership templates to get the names
+      const templatesRes = await fetch("http://localhost/API/memberships.php");
+      const templatesData = await templatesRes.json();
+
+      const formatted = customersData.map((cust) => {
+        let isExpired = false;
+        let membershipBalance = 0;
+        let expirationDate = null;
+        let membershipDetails = null;
+
+        // Find membership for this customer
+        const membership = membershipsData.find(
+          (m) => m.customer_id == cust.id
+        );
+
+        if (membership) {
+          // Find the template to get the name - match by type
+          const template = templatesData.find(
+            (t) => t.type.toLowerCase() === membership.type.toLowerCase()
+          );
+
+          // Check expiration
+          if (membership.expire_date) {
+            const expire = new Date(membership.expire_date);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            expire.setHours(0, 0, 0, 0);
+
+            isExpired = expire < today;
+            expirationDate = membership.expire_date;
+          }
+
+          membershipBalance = membership.remaining_balance || 0;
+          membershipDetails = {
+            name:
+              template?.name ||
+              (membership.type.toLowerCase() === "pro"
+                ? "Pro Member"
+                : membership.type.toLowerCase() === "basic"
+                  ? "Basic Member"
+                  : membership.type.toLowerCase() === "promo"
+                    ? "Promo Member"
+                    : membership.type),
+            coverage: membership.coverage,
+            remainingBalance: membership.remaining_balance,
+            expire_date: membership.expire_date,
+            type: membership.type,
+          };
+        }
+
+        const isNewMember = shouldShowNewMemberBadge(cust);
+
+        return {
+          id: cust.id,
+          name: cust.name,
+          membershipType: cust.membership_status,
+          isMember: cust.membership_status !== "None",
+          balance: membershipBalance,
+          isNewMember: isNewMember,
+          isExpired: isExpired,
+          expirationDate: expirationDate,
+          membershipDetails: membershipDetails,
+        };
+      });
+
+      setCustomers(formatted);
+    } catch (err) {
+      console.error(err);
+      setCustomersError("Failed to load customers");
+    } finally {
+      setIsCustomersLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchCustomers();
+    fetchCustomersWithMembership();
   }, []);
+
+  const today = new Date();
+  console.log("Today's date:", today.toISOString().split("T")[0]);
+  console.log(
+    "Testing expiration for 2025-10-15:",
+    new Date("2025-10-15") < today
+  );
 
   // Fetch services on component mount
   useEffect(() => {
@@ -496,6 +589,7 @@ export default function ServiceOrderPage() {
   const canUseDiscountServices =
     isMember &&
     useMembership &&
+    !selectedCustomer?.isExpired && // ✅ ADD: Expired members cannot use discounts
     // Regular members can always use discounts
     (!isNewMember ||
       // New members can use discounts ONLY when balance is 0 or less
@@ -507,26 +601,26 @@ export default function ServiceOrderPage() {
     : 0;
 
   const membershipBalanceDeduction =
-    isMember && useMembership && membershipBalance > 0
+    isMember &&
+    useMembership &&
+    membershipBalance > 0 &&
+    !selectedCustomer?.isExpired // ✅ ADD expiration check here only
       ? (() => {
-          // Subtotal of services eligible for balance (exclude promo & bundle)
           const eligibleServicesTotal = selectedServices
             .filter((s) => !s.isFromPromo && !s.isFromBundle)
             .reduce((sum, s) => sum + s.price * (s.quantity || 1), 0);
 
-          // Do NOT shrink eligibleServicesTotal by promo/discount — membership balance
-          // is applied to the subtotal of eligible services (before discount deduction).
           const amountAfterMembershipDiscount =
             !isNewMember && membershipDiscountAmount > 0
               ? Math.max(eligibleServicesTotal - membershipDiscountAmount, 0)
               : eligibleServicesTotal;
 
-          // Deduct up to the available membership balance
           return Math.min(membershipBalance, amountAfterMembershipDiscount);
         })()
       : 0;
 
   // Unified membership reduction for total calculation
+  // In the membership reduction calculation
   const membershipReductionUsed =
     isMember && useMembership
       ? isNewMember
@@ -542,6 +636,16 @@ export default function ServiceOrderPage() {
           : service
       )
     );
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return "No expiry";
+    const date = new Date(dateString);
+    return date.toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
   };
 
   const confirmSave = async () => {
@@ -671,6 +775,7 @@ export default function ServiceOrderPage() {
           setSavedOrderData(finalOrderData);
           setCurrentStep(4);
 
+          // ✅ Check if we should remove new member badge (when balance is used up)
           if (isNewMember && finalOrderData.new_membership_balance <= 0) {
             try {
               if (selectedCustomer?.id) {
@@ -847,15 +952,48 @@ export default function ServiceOrderPage() {
     }
   };
 
+  // Helper function to check if customer should show new member badge
+  const shouldShowNewMemberBadge = (customer) => {
+    try {
+      const stored = localStorage.getItem(`newMember:${customer.id}`);
+      if (!stored) return false;
+
+      const parsed = JSON.parse(stored);
+      const storedMembershipId = parsed?.membershipId;
+      const currentMembershipId = customer.membership_id;
+
+      // Only remove the badge if membership has been renewed (different membership ID)
+      if (
+        storedMembershipId &&
+        currentMembershipId &&
+        storedMembershipId !== currentMembershipId &&
+        currentMembershipId !== null &&
+        currentMembershipId !== undefined
+      ) {
+        // Membership renewed - remove flag and don't show badge
+        localStorage.removeItem(`newMember:${customer.id}`);
+        return false;
+      }
+
+      // Show badge if flag exists and hasn't been renewed
+      return true;
+    } catch (_) {
+      return false;
+    }
+  };
+
   const handleCustomerSelect = (customer) => {
     setCustomerName(customer.name);
     setMembershipType(customer.membershipType);
     setIsMember(customer.isMember);
-    setMembershipBalance(customer.balance); // ✅ set balance here
-    setMembershipExpiration(customer.expirationDate); // ✅ set expiration
+    setMembershipBalance(customer.balance);
+    setMembershipExpiration(customer.expirationDate);
     setSelectedCustomer(customer);
-    // Determine if this is a first-time/new member using localStorage flag hydrated in customers list
-    setIsNewMember(!!customer.isNewMember);
+
+    // Enhanced new member detection using localStorage like in Customers page
+    const isNewMember = shouldShowNewMemberBadge(customer);
+    setIsNewMember(isNewMember);
+
     setIsCustomerModalOpen(false);
   };
 
@@ -939,6 +1077,51 @@ export default function ServiceOrderPage() {
     }
 
     try {
+      let userData = currentUser;
+
+      // If currentUser is not available, try to fetch it
+      if (!userData) {
+        try {
+          const currentUserResponse = await fetch(
+            "http://localhost/API/branches.php?action=user",
+            {
+              credentials: "include",
+            }
+          );
+
+          if (currentUserResponse.ok) {
+            userData = await currentUserResponse.json();
+            console.log(
+              "Fetched user data in handleMembershipUpgrade:",
+              userData
+            );
+          }
+        } catch (userError) {
+          console.error("Error fetching user data:", userError);
+        }
+      }
+
+      // Also try localStorage as fallback
+      if (!userData) {
+        const storedUser = localStorage.getItem("user");
+        if (storedUser) {
+          try {
+            userData = JSON.parse(storedUser);
+            console.log("User data from localStorage:", userData);
+          } catch (parseError) {
+            console.error(
+              "Error parsing user data from localStorage:",
+              parseError
+            );
+          }
+        }
+      }
+
+      // Use consistent user ID and branch ID fields
+      const userId = userData?.id || userData?.user_id || null;
+      const branchId = userData?.branch_id || null;
+      const userName = userData?.name || "Unknown User";
+
       const body = {
         customer_id: selectedCustomer.id,
         action: "New Member",
@@ -948,7 +1131,12 @@ export default function ServiceOrderPage() {
         payment_method: upgradeMembershipForm.paymentMethod || "cash",
         note: upgradeMembershipForm.description || "",
         duration: 1,
+        branch_id: branchId,
+        performed_by: userId,
+        performed_by_name: userName,
       };
+
+      console.log("Sending membership upgrade data:", body); // Debug log
 
       if (
         upgradeMembershipForm.type === "promo" &&
@@ -1005,7 +1193,7 @@ export default function ServiceOrderPage() {
         );
         setCustomers(updatedCustomers);
 
-        // Store the new member flag with membership ID
+        // ✅ Store the new member flag with membership ID (same as Customers page)
         try {
           localStorage.setItem(
             `newMember:${selectedCustomer.id}`,
@@ -1016,7 +1204,7 @@ export default function ServiceOrderPage() {
             })
           );
         } catch (_) {
-          // storage may be unavailable; ignore
+          // ignore storage errors
         }
 
         setIsMembershipUpgradeModalOpen(false);
@@ -1081,10 +1269,7 @@ export default function ServiceOrderPage() {
           {/* Search for Mobile (hidden on desktop) */}
           <div className="px-4 mb-4 w-full lg:hidden">
             <div className="relative">
-              <Search
-                className="absolute left-3 top-1/2 transform -translate-y-1/2 text-emerald-300"
-                size={18}
-              />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-emerald-300" size={18} />
               <input
                 type="text"
                 placeholder="Search menu..."
@@ -1100,15 +1285,13 @@ export default function ServiceOrderPage() {
               <Link href="/home2" passHref>
                 <Menu.Button
                   as="div"
-                  className={`w-full p-3 rounded-lg text-left flex items-center cursor-pointer transition-all ${router.pathname === "/home" ? "bg-emerald-600 shadow-md" : "hover:bg-emerald-600/70"}`}
+                  className={`w-full p-3 rounded-lg text-left flex items-center cursor-pointer transition-all ${router.pathname === '/home' ? 'bg-emerald-600 shadow-md' : 'hover:bg-emerald-600/70'}`}
                 >
-                  <div
-                    className={`p-1.5 mr-3 rounded-lg ${router.pathname === "/home" ? "bg-white text-emerald-700" : "bg-emerald-900/30 text-white"}`}
-                  >
+                  <div className={`p-1.5 mr-3 rounded-lg ${router.pathname === '/home' ? 'bg-white text-emerald-700' : 'bg-emerald-900/30 text-white'}`}>
                     <Home size={18} />
                   </div>
                   <span>Dashboard</span>
-                  {router.pathname === "/home2" && (
+                  {router.pathname === '/home2' && (
                     <motion.div
                       className="ml-auto w-2 h-2 bg-white rounded-full"
                       initial={{ scale: 0 }}
@@ -1124,12 +1307,10 @@ export default function ServiceOrderPage() {
               {({ open }) => (
                 <>
                   <Menu.Button
-                    className={`w-full p-3 rounded-lg text-left flex items-center justify-between transition-all ${open ? "bg-emerald-600" : "hover:bg-emerald-600/70"}`}
+                    className={`w-full p-3 rounded-lg text-left flex items-center justify-between transition-all ${open ? 'bg-emerald-600' : 'hover:bg-emerald-600/70'}`}
                   >
                     <div className="flex items-center">
-                      <div
-                        className={`p-1.5 mr-3 rounded-lg ${open ? "bg-white text-emerald-700" : "bg-emerald-900/30 text-white"}`}
-                      >
+                      <div className={`p-1.5 mr-3 rounded-lg ${open ? 'bg-white text-emerald-700' : 'bg-emerald-900/30 text-white'}`}>
                         <Layers size={18} />
                       </div>
                       <span>Services</span>
@@ -1155,28 +1336,10 @@ export default function ServiceOrderPage() {
                         className="mt-1 ml-3 w-full bg-emerald-700/90 text-white rounded-lg shadow-lg overflow-hidden"
                       >
                         {[
-                          {
-                            href: "/servicess2",
-                            label: "All Services",
-                            icon: <Layers size={16} />,
-                          },
-                          {
-                            href: "/membership2",
-                            label: "Memberships",
-                            icon: <UserPlus size={16} />,
-                            badge: 3,
-                          },
-                          {
-                            href: "/items2",
-                            label: "Beauty Deals",
-                            icon: <Tag size={16} />,
-                            badge: "New",
-                          },
-                          {
-                            href: "/serviceorder2",
-                            label: "Service Acquire",
-                            icon: <ClipboardList size={16} />,
-                          },
+                          { href: "/servicess2", label: "All Services", icon: <Layers size={16} /> },
+                          { href: "/membership2", label: "Memberships", icon: <UserPlus size={16} />, badge: 3 },
+                          { href: "/items2", label: "Beauty Deals", icon: <Tag size={16} />, badge: 'New' },
+                          { href: "/serviceorder2", label: "Service Acquire", icon: <ClipboardList size={16} /> },
                         ].map((link, index) => (
                           <Menu.Item key={link.href}>
                             {({ active }) => (
@@ -1187,20 +1350,16 @@ export default function ServiceOrderPage() {
                               >
                                 <Link
                                   href={link.href}
-                                  className={`flex items-center justify-between space-x-3 p-3 ${active ? "bg-emerald-600" : ""} ${router.pathname === link.href ? "bg-emerald-600 font-medium" : ""}`}
+                                  className={`flex items-center justify-between space-x-3 p-3 ${active ? 'bg-emerald-600' : ''} ${router.pathname === link.href ? 'bg-emerald-600 font-medium' : ''}`}
                                 >
                                   <div className="flex items-center">
-                                    <span
-                                      className={`mr-3 ${router.pathname === link.href ? "text-white" : "text-emerald-300"}`}
-                                    >
+                                    <span className={`mr-3 ${router.pathname === link.href ? 'text-white' : 'text-emerald-300'}`}>
                                       {link.icon}
                                     </span>
                                     <span>{link.label}</span>
                                   </div>
                                   {link.badge && (
-                                    <span
-                                      className={`text-xs px-2 py-0.5 rounded-full ${typeof link.badge === "number" ? "bg-amber-500" : "bg-emerald-500"}`}
-                                    >
+                                    <span className={`text-xs px-2 py-0.5 rounded-full ${typeof link.badge === 'number' ? 'bg-amber-500' : 'bg-emerald-500'}`}>
                                       {link.badge}
                                     </span>
                                   )}
@@ -1221,12 +1380,10 @@ export default function ServiceOrderPage() {
               {({ open }) => (
                 <>
                   <Menu.Button
-                    className={`w-full p-3 rounded-lg text-left flex items-center justify-between transition-all ${open ? "bg-emerald-600" : "hover:bg-emerald-600/70"}`}
+                    className={`w-full p-3 rounded-lg text-left flex items-center justify-between transition-all ${open ? 'bg-emerald-600' : 'hover:bg-emerald-600/70'}`}
                   >
                     <div className="flex items-center">
-                      <div
-                        className={`p-1.5 mr-3 rounded-lg ${open ? "bg-white text-emerald-700" : "bg-emerald-900/30 text-white"}`}
-                      >
+                      <div className={`p-1.5 mr-3 rounded-lg ${open ? 'bg-white text-emerald-700' : 'bg-emerald-900/30 text-white'}`}>
                         <BarChart2 size={18} />
                       </div>
                       <span>Sales</span>
@@ -1252,16 +1409,8 @@ export default function ServiceOrderPage() {
                         className="mt-1 ml-3 w-full bg-emerald-700/90 text-white rounded-lg shadow-lg overflow-hidden"
                       >
                         {[
-                          {
-                            href: "/customers2",
-                            label: "Customers",
-                            icon: <Users size={16} />,
-                          },
-                          {
-                            href: "/invoices2",
-                            label: "Invoices",
-                            icon: <FileText size={16} />,
-                          },
+                          { href: "/customers2", label: "Customers", icon: <Users size={16} />, },
+                          { href: "/invoices2", label: "Invoices", icon: <FileText size={16} />, },
                         ].map((link, index) => (
                           <Menu.Item key={link.href}>
                             {({ active }) => (
@@ -1272,12 +1421,10 @@ export default function ServiceOrderPage() {
                               >
                                 <Link
                                   href={link.href}
-                                  className={`flex items-center justify-between space-x-3 p-3 ${active ? "bg-emerald-600" : ""} ${router.pathname === link.href ? "bg-emerald-600 font-medium" : ""}`}
+                                  className={`flex items-center justify-between space-x-3 p-3 ${active ? 'bg-emerald-600' : ''} ${router.pathname === link.href ? 'bg-emerald-600 font-medium' : ''}`}
                                 >
                                   <div className="flex items-center">
-                                    <span
-                                      className={`mr-3 ${router.pathname === link.href ? "text-white" : "text-emerald-300"}`}
-                                    >
+                                    <span className={`mr-3 ${router.pathname === link.href ? 'text-white' : 'text-emerald-300'}`}>
                                       {link.icon}
                                     </span>
                                     <span>{link.label}</span>
@@ -1318,8 +1465,7 @@ export default function ServiceOrderPage() {
                     <p className="text-xs text-emerald-300">Receptionist</p>
                   </div>
                 </div>
-                <button
-                  className="text-emerald-300 hover:text-white transition-colors"
+                <button className="text-emerald-300 hover:text-white transition-colors"
                   onClick={handleLogout}
                 >
                   <LogOut size={18} />
@@ -1425,29 +1571,44 @@ export default function ServiceOrderPage() {
                             <h3 className="font-medium text-lg">
                               {customerName}
                             </h3>
-                            <div className="flex items-center mt-1">
+                            <div className="flex items-center mt-1 space-x-2">
                               {/* Member / Regular Customer badge */}
                               <span
                                 className={`text-xs px-2 py-1 rounded-full ${
-                                  isMember
+                                  isMember && !selectedCustomer?.isExpired
                                     ? "bg-emerald-100 text-emerald-800"
-                                    : "bg-gray-100 text-gray-800"
+                                    : selectedCustomer?.isExpired
+                                      ? "bg-red-100 text-red-800"
+                                      : "bg-gray-100 text-gray-800"
                                 }`}
                               >
-                                {isMember ? "Member" : "Regular Customer"}
+                                {selectedCustomer?.isExpired
+                                  ? "Expired Member"
+                                  : isMember
+                                    ? "Member"
+                                    : "Regular Customer"}
                               </span>
 
-                              {/* Expiration date (if applicable) */}
-                              {isMember && membershipExpiration && (
-                                <span className="text-xs text-gray-500 ml-2">
-                                  Expires: {formatDate(membershipExpiration)}
+                              {/* 🆕 New Member badge - ADD THIS */}
+                              {isNewMember && (
+                                <span className="text-xs bg-gradient-to-r from-amber-100 to-yellow-100 text-amber-800 px-2 py-1 rounded-full border border-amber-300 font-semibold shadow-sm animate-pulse">
+                                  ✨ New Member
                                 </span>
                               )}
 
-                              {/* 🆕 New Member badge */}
-                              {isNewMember && (
-                                <span className="text-xs ml-2 bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full font-medium animate-pulse">
-                                  New Member
+                              {/* Expiration date (if applicable) */}
+                              {isMember && membershipExpiration && (
+                                <span
+                                  className={`text-xs ${
+                                    selectedCustomer?.isExpired
+                                      ? "text-red-600"
+                                      : "text-gray-500"
+                                  }`}
+                                >
+                                  {selectedCustomer?.isExpired
+                                    ? "Expired: "
+                                    : "Expires: "}
+                                  {formatDate(membershipExpiration)}
                                 </span>
                               )}
                             </div>
@@ -1456,13 +1617,19 @@ export default function ServiceOrderPage() {
                             onClick={() => {
                               setCustomerName("");
                               setIsMember(false);
+                              setIsNewMember(false);
                             }}
                             className="text-gray-500 hover:text-red-500"
                           >
                             <X size={18} />
                           </button>
                         </div>
-
+                        {/* Expiration Warning */}
+                        {selectedCustomer?.isExpired && (
+                          <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
+                            ⚠️ Membership has expired. Benefits cannot be used.
+                          </div>
+                        )}
                         {isMember && (
                           <div className="mt-4 space-y-2">
                             <div className="flex justify-between text-sm">
@@ -1470,7 +1637,9 @@ export default function ServiceOrderPage() {
                                 Membership Type:
                               </span>
                               <span className="font-medium">
-                                {membershipType}
+                                {selectedCustomer?.membershipDetails?.name
+                                  ? selectedCustomer.membershipDetails.name
+                                  : membershipType}
                               </span>
                             </div>
                             <div className="flex justify-between text-sm">
@@ -1514,18 +1683,24 @@ export default function ServiceOrderPage() {
                           <div className="flex justify-between items-center text-sm mt-2">
                             <label
                               htmlFor="useMembership"
-                              className="text-gray-600"
+                              className={`${selectedCustomer?.isExpired ? "text-gray-400" : "text-gray-600"}`}
                             >
                               Use membership benefits
+                              {selectedCustomer?.isExpired && " (Expired)"}
                             </label>
                             <input
                               id="useMembership"
                               type="checkbox"
-                              checked={useMembership}
-                              onChange={(e) =>
-                                setUseMembership(e.target.checked)
+                              checked={
+                                useMembership && !selectedCustomer?.isExpired
                               }
-                              className="accent-emerald-600"
+                              onChange={(e) => {
+                                if (!selectedCustomer?.isExpired) {
+                                  setUseMembership(e.target.checked);
+                                }
+                              }}
+                              disabled={selectedCustomer?.isExpired}
+                              className="accent-emerald-600 disabled:opacity-50"
                             />
                           </div>
                         )}
@@ -2797,7 +2972,9 @@ export default function ServiceOrderPage() {
                               Membership Type:
                             </span>
                             <span className="font-medium">
-                              {membershipType}
+                              {selectedCustomer?.membershipDetails?.name
+                                ? selectedCustomer.membershipDetails.name
+                                : membershipType}
                             </span>
                           </div>
                           {membershipBalanceDeduction > 0 && (
@@ -3326,39 +3503,56 @@ export default function ServiceOrderPage() {
                                 .toLowerCase()
                                 .includes(searchTerm.toLowerCase())
                             )
-                            .map((customer) => (
-                              <motion.li
-                                key={customer.id}
-                                className="p-4 hover:bg-gray-50 cursor-pointer"
-                                whileHover={{ backgroundColor: "#f9fafb" }}
-                                onClick={() => handleCustomerSelect(customer)}
-                                initial={{ opacity: 0, y: 10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ type: "spring" }}
-                              >
-                                <div className="flex justify-between items-center">
-                                  <div>
-                                    <div className="font-medium">
-                                      {customer.name}
+                            .map((customer) => {
+                              const isNewMember =
+                                shouldShowNewMemberBadge(customer);
+                              return (
+                                <motion.li
+                                  key={customer.id}
+                                  className="p-4 hover:bg-gray-50 cursor-pointer"
+                                  whileHover={{ backgroundColor: "#f9fafb" }}
+                                  onClick={() => handleCustomerSelect(customer)}
+                                  initial={{ opacity: 0, y: 10 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  transition={{ type: "spring" }}
+                                >
+                                  <div className="flex justify-between items-center">
+                                    <div>
+                                      <div className="font-medium flex items-center gap-2">
+                                        {customer.name}
+                                        {/* 🆕 New Member badge in customer list */}
+                                        {isNewMember && (
+                                          <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded-full font-medium animate-pulse">
+                                            New Member
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="text-sm text-gray-500">
+                                        {customer.phone}
+                                      </div>
                                     </div>
-                                    <div className="text-sm text-gray-500">
-                                      {customer.phone}
+                                    <div className="text-right">
+                                      {customer.isMember ? (
+                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
+                                          {customer.membershipDetails?.name
+                                            ? customer.membershipDetails.name
+                                            : customer.membershipType === "pro"
+                                              ? "Pro Member"
+                                              : customer.membershipType ===
+                                                  "basic"
+                                                ? "Basic Member"
+                                                : `${customer.membershipType} Member`}
+                                        </span>
+                                      ) : (
+                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                          Regular Customer
+                                        </span>
+                                      )}
                                     </div>
                                   </div>
-                                  <div className="text-right">
-                                    {customer.isMember ? (
-                                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
-                                        {customer.membershipType} Member
-                                      </span>
-                                    ) : (
-                                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                                        Regular Customer
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                              </motion.li>
-                            ))}
+                                </motion.li>
+                              );
+                            })}
                         </ul>
                       ) : (
                         <div className="flex flex-col items-center justify-center p-8 text-gray-500">

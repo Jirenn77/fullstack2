@@ -30,6 +30,7 @@ import {
   Leaf,
   ChevronDown,
   EyeOff,
+  ArrowUpDown,
 } from "lucide-react";
 
 export default function UserManagement() {
@@ -51,7 +52,12 @@ export default function UserManagement() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [showEditPassword, setShowEditPassword] = useState(false);
   const [showEditConfirmPassword, setShowEditConfirmPassword] = useState(false);
-
+  
+  // Sorting state
+  const [sortConfig, setSortConfig] = useState({
+    key: "name",
+    direction: "asc"
+  });
 
   const [newUser, setNewUser] = useState({
     name: "",
@@ -60,9 +66,8 @@ export default function UserManagement() {
     branch_id: "",
     password: "",
     confirmPassword: "",
-    status: "Active", // or "" depending on your default
+    status: "Active",
   });
-
 
   useEffect(() => {
     fetchUsers();
@@ -71,7 +76,6 @@ export default function UserManagement() {
   const fetchUsers = async () => {
     try {
       setIsLoading(true);
-      // Replace with your actual API endpoint
       const response = await fetch("http://localhost/API/users.php");
       if (!response.ok) throw new Error("Failed to fetch users");
       const data = await response.json();
@@ -109,6 +113,63 @@ export default function UserManagement() {
     fetchBranches();
   }, []);
 
+  // Sorting function
+  const handleSort = (key) => {
+    let direction = "asc";
+    if (sortConfig.key === key && sortConfig.direction === "asc") {
+      direction = "desc";
+    }
+    setSortConfig({ key, direction });
+  };
+
+  // Get sorted and filtered users
+  const getSortedUsers = () => {
+    const sortableUsers = [...filteredUsers];
+    if (sortConfig.key) {
+      sortableUsers.sort((a, b) => {
+        // Handle branch sorting differently since it might be branchName or branch
+        const aValue = sortConfig.key === "branch" 
+          ? (a.branchName || a.branch || "").toLowerCase()
+          : a[sortConfig.key]?.toLowerCase() || "";
+        const bValue = sortConfig.key === "branch"
+          ? (b.branchName || b.branch || "").toLowerCase()
+          : b[sortConfig.key]?.toLowerCase() || "";
+
+        if (aValue < bValue) {
+          return sortConfig.direction === "asc" ? -1 : 1;
+        }
+        if (aValue > bValue) {
+          return sortConfig.direction === "asc" ? 1 : -1;
+        }
+        return 0;
+      });
+    }
+    return sortableUsers;
+  };
+
+  const filteredUsers = users
+    .filter((user) => {
+      if (activeTab === "all") return true;
+      if (activeTab === "active") return user.status === "Active";
+      if (activeTab === "inactive") return user.status === "Inactive";
+      return true;
+    })
+    .filter((user) => {
+      if (!searchQuery) return true;
+      const query = searchQuery.toLowerCase();
+      return (
+        user.name.toLowerCase().includes(query) ||
+        user.username.toLowerCase().includes(query) ||
+        (user.branchName || user.branch || "").toLowerCase().includes(query)
+      );
+    });
+
+  const sortedUsers = getSortedUsers();
+  const indexOfLastUser = currentPage * usersPerPage;
+  const indexOfFirstUser = indexOfLastUser - usersPerPage;
+  const currentUsers = sortedUsers.slice(indexOfFirstUser, indexOfLastUser);
+  const totalPages = Math.ceil(sortedUsers.length / usersPerPage);
+
   const handleEditClick = (user) => {
     setEditUser({ ...user });
     setIsEditModalOpen(true);
@@ -120,10 +181,20 @@ export default function UserManagement() {
       return;
     }
 
+    // Create payload - only send what's needed
     const payload = {
-      ...updatedUser,
-      user_id: updatedUser.id,
+      name: updatedUser.name,
+      username: updatedUser.username,
+      email: updatedUser.email,
+      branch_id: updatedUser.branch_id || null,
+      status: updatedUser.status,
+      role: updatedUser.role || 'receptionist'
     };
+
+    // Only include password if it's provided
+    if (updatedUser.password) {
+      payload.password = updatedUser.password;
+    }
 
     try {
       const res = await fetch(
@@ -136,22 +207,28 @@ export default function UserManagement() {
       );
 
       const result = await res.json();
-      if (res.ok && !result.error) {
+      
+      if (res.ok && result.success) {
+        // Use the updated user data from the server response
         const updatedList = users.map((u) =>
-          u.id === updatedUser.id ? updatedUser : u
+          u.id === updatedUser.id ? { ...u, ...result.user } : u
         );
         setUsers(updatedList);
         toast.success(result.message || "User updated successfully");
         setIsEditModalOpen(false);
+        
+        // Refresh the user details if this user is selected
+        if (selectedUser && selectedUser.id === updatedUser.id) {
+          fetchUserDetails(updatedUser.id);
+        }
       } else {
         toast.error(result.error || result.message || "Failed to update");
       }
     } catch (err) {
       console.error(err);
-      toast.error("An error occurred");
+      toast.error("An error occurred while updating user");
     }
   };
-
 
   const handleAddUser = async () => {
     try {
@@ -174,9 +251,7 @@ export default function UserManagement() {
         throw new Error(result.message || "Failed to add user");
       }
 
-      // Use result.user (not result itself)
       setUsers([...users, result.user]);
-
       setIsModalOpen(false);
       setNewUser({
         name: "",
@@ -195,29 +270,6 @@ export default function UserManagement() {
     }
   };
 
-
-  const filteredUsers = users
-    .filter((user) => {
-      if (activeTab === "all") return true;
-      if (activeTab === "active") return user.status === "Active";
-      if (activeTab === "inactive") return user.status === "Inactive";
-      return true;
-    })
-    .filter((user) => {
-      if (!searchQuery) return true;
-      const query = searchQuery.toLowerCase();
-      return (
-        user.name.toLowerCase().includes(query) ||
-        user.username.toLowerCase().includes(query) ||
-        user.branch.toLowerCase().includes(query)
-      );
-    });
-
-  const indexOfLastUser = currentPage * usersPerPage;
-  const indexOfFirstUser = indexOfLastUser - usersPerPage;
-  const currentUsers = filteredUsers.slice(indexOfFirstUser, indexOfLastUser);
-  const totalPages = Math.ceil(filteredUsers.length / usersPerPage);
-
   const handlePageChange = (pageNumber) => {
     setCurrentPage(pageNumber);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -228,54 +280,97 @@ export default function UserManagement() {
     window.location.href = "/";
   };
 
+  // Sort indicator component
+  const SortIndicator = ({ columnKey }) => {
+    if (sortConfig.key !== columnKey) {
+      return <ArrowUpDown size={14} className="text-gray-400" />;
+    }
+    return (
+      <ChevronDown 
+        size={14} 
+        className={`transition-transform ${
+          sortConfig.direction === "desc" ? "rotate-180" : ""
+        }`}
+      />
+    );
+  };
+
   return (
     <div className="flex flex-col h-screen bg-[#77DD77] text-gray-900">
       <Toaster />
       {/* Header */}
-            <header className="flex items-center justify-between bg-emerald-700 text-white p-4 w-full h-16 pl-64 relative">
-              <div className="flex items-center space-x-4">
-                {/* Space for potential left-aligned elements */}
-              </div>
-      
-              <div className="flex items-center space-x-4 relative">
-                <div
-                  className="w-10 h-10 rounded-full bg-amber-500 flex items-center justify-center text-lg font-bold cursor-pointer hover:bg-amber-600 transition-colors"
-                  onClick={() => setIsProfileOpen(!isProfileOpen)}
+      <header className="flex items-center justify-between bg-emerald-700 text-white p-4 w-full h-16 pl-64 relative">
+        <div className="flex items-center space-x-4">
+          {/* Space for potential left-aligned elements */}
+        </div>
+  
+    <div className="flex items-center space-x-4 flex-grow justify-center">
+  <div className="relative">
+    <Search
+      className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+      size={18}
+    />
+    <input
+      type="text"
+      placeholder="Search users by name, username, or branch..."
+      value={searchQuery}
+      onChange={(e) => {
+        setSearchQuery(e.target.value);
+        setCurrentPage(1);
+      }}
+      className="pl-10 pr-10 py-2 rounded-lg bg-white border border-gray-300 text-gray-800 w-80 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+      onKeyPress={(e) => e.key === "Enter" && setCurrentPage(1)}
+    />
+    {searchQuery && (
+      <button
+        onClick={() => setSearchQuery("")}
+        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+      >
+        <X size={18} />
+      </button>
+    )}
+  </div>
+</div>
+
+        <div className="flex items-center space-x-4 relative">
+          <div
+            className="w-10 h-10 rounded-full bg-amber-500 flex items-center justify-center text-lg font-bold cursor-pointer hover:bg-amber-600 transition-colors"
+            onClick={() => setIsProfileOpen(!isProfileOpen)}
+          >
+            A
+          </div>
+          <AnimatePresence>
+            {isProfileOpen && (
+              <motion.div
+                className="absolute top-12 right-0 bg-white shadow-xl rounded-lg w-48 overflow-hidden z-50"
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.2 }}
+              >
+                <Link
+                  href="/profiles"
+                  className="flex items-center gap-3 px-4 py-3 hover:bg-gray-100 w-full text-gray-700"
                 >
-                  A
-                </div>
-                <AnimatePresence>
-                  {isProfileOpen && (
-                    <motion.div
-                      className="absolute top-12 right-0 bg-white shadow-xl rounded-lg w-48 overflow-hidden z-50"
-                      initial={{ opacity: 0, y: -10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -10 }}
-                      transition={{ duration: 0.2 }}
-                    >
-                      <Link
-                        href="/profiles"
-                        className="flex items-center gap-3 px-4 py-3 hover:bg-gray-100 w-full text-gray-700"
-                      >
-                        <User size={16} /> Profile
-                      </Link>
-                      <Link
-                        href="/roles"
-                        className="flex items-center gap-3 px-4 py-3 hover:bg-gray-100 w-full text-gray-700"
-                      >
-                        <Settings size={16} /> Settings
-                      </Link>
-                      <button
-                        className="flex items-center gap-3 px-4 py-3 hover:bg-red-50 w-full text-red-500"
-                        onClick={handleLogout}
-                      >
-                        <LogOut size={16} /> Logout
-                      </button>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            </header>
+                  <User size={16} /> Profile
+                </Link>
+                <Link
+                  href="/roles"
+                  className="flex items-center gap-3 px-4 py-3 hover:bg-gray-100 w-full text-gray-700"
+                >
+                  <Settings size={16} /> Settings
+                </Link>
+                <button
+                  className="flex items-center gap-3 px-4 py-3 hover:bg-red-50 w-full text-red-500"
+                  onClick={handleLogout}
+                >
+                  <LogOut size={16} /> Logout
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </header>
 
       {/* Enhanced Sidebar */}
       <div className="flex flex-1">
@@ -294,15 +389,15 @@ export default function UserManagement() {
           <div className="w-full px-4 space-y-1 overflow-y-auto flex-grow custom-scrollbar">
             <Link href="/home" passHref>
               <div
-                className={`w-full p-3 rounded-lg text-left flex items-center cursor-pointer transition-all ${router.pathname === "/home" ? "bg-emerald-600 shadow-md" : "hover:bg-emerald-600/70"}`}
+                className={`w-full p-3 rounded-lg text-left flex items-center cursor-pointer transition-all ${pathname === "/home" ? "bg-emerald-600 shadow-md" : "hover:bg-emerald-600/70"}`}
               >
                 <div
-                  className={`p-1.5 mr-3 rounded-lg ${router.pathname === "/home" ? "bg-white text-emerald-700" : "bg-emerald-900/30 text-white"}`}
+                  className={`p-1.5 mr-3 rounded-lg ${pathname === "/home" ? "bg-white text-emerald-700" : "bg-emerald-900/30 text-white"}`}
                 >
                   <Home size={18} />
                 </div>
                 <span>Dashboard</span>
-                {router.pathname === "/home" && (
+                {pathname === "/home" && (
                   <motion.div
                     className="ml-auto w-2 h-2 bg-white rounded-full"
                     initial={{ scale: 0 }}
@@ -314,15 +409,15 @@ export default function UserManagement() {
 
             <Link href="/roles" passHref>
               <div
-                className={`w-full p-3 rounded-lg text-left flex items-center cursor-pointer transition-all ${router.pathname === "/roles" ? "bg-emerald-600 shadow-md" : "hover:bg-emerald-600/70"}`}
+                className={`w-full p-3 rounded-lg text-left flex items-center cursor-pointer transition-all ${pathname === "/roles" ? "bg-emerald-600 shadow-md" : "hover:bg-emerald-600/70"}`}
               >
                 <div
-                  className={`p-1.5 mr-3 rounded-lg ${router.pathname === "/roles" ? "bg-white text-emerald-700" : "bg-emerald-900/30 text-white"}`}
+                  className={`p-1.5 mr-3 rounded-lg ${pathname === "/roles" ? "bg-white text-emerald-700" : "bg-emerald-900/30 text-white"}`}
                 >
                   <Shield size={18} />
                 </div>
                 <span>Role Settings</span>
-                {router.pathname === "/roles" && (
+                {pathname === "/roles" && (
                   <motion.div
                     className="ml-auto w-2 h-2 bg-white rounded-full"
                     initial={{ scale: 0 }}
@@ -334,15 +429,15 @@ export default function UserManagement() {
 
             <Link href="/employeeM" passHref>
               <div
-                className={`w-full p-3 rounded-lg text-left flex items-center cursor-pointer transition-all ${router.pathname === "/employeeM" ? "bg-emerald-600 shadow-md" : "hover:bg-emerald-600/70"}`}
+                className={`w-full p-3 rounded-lg text-left flex items-center cursor-pointer transition-all ${pathname === "/employeeM" ? "bg-emerald-600 shadow-md" : "hover:bg-emerald-600/70"}`}
               >
                 <div
-                  className={`p-1.5 mr-3 rounded-lg ${router.pathname === "/employeeM" ? "bg-white text-emerald-700" : "bg-emerald-900/30 text-white"}`}
+                  className={`p-1.5 mr-3 rounded-lg ${pathname === "/employeeM" ? "bg-white text-emerald-700" : "bg-emerald-900/30 text-white"}`}
                 >
                   <Users size={18} />
                 </div>
                 <span>Employee Management</span>
-                {router.pathname === "/employeeM" && (
+                {pathname === "/employeeM" && (
                   <motion.div
                     className="ml-auto w-2 h-2 bg-white rounded-full"
                     initial={{ scale: 0 }}
@@ -354,15 +449,15 @@ export default function UserManagement() {
 
             <Link href="/userManage" passHref>
               <div
-                className={`w-full p-3 rounded-lg text-left flex items-center cursor-pointer transition-all ${router.pathname === "/userManage" ? "bg-emerald-600 shadow-md" : "hover:bg-emerald-600/70"}`}
+                className={`w-full p-3 rounded-lg text-left flex items-center cursor-pointer transition-all ${pathname === "/userManage" ? "bg-emerald-600 shadow-md" : "hover:bg-emerald-600/70"}`}
               >
                 <div
-                  className={`p-1.5 mr-3 rounded-lg ${router.pathname === "/userManage" ? "bg-white text-emerald-700" : "bg-emerald-900/30 text-white"}`}
+                  className={`p-1.5 mr-3 rounded-lg ${pathname === "/userManage" ? "bg-white text-emerald-700" : "bg-emerald-900/30 text-white"}`}
                 >
                   <Users size={18} />
                 </div>
                 <span>User Management</span>
-                {router.pathname === "/userManage" && (
+                {pathname === "/userManage" && (
                   <motion.div
                     className="ml-auto w-2 h-2 bg-white rounded-full"
                     initial={{ scale: 0 }}
@@ -374,15 +469,15 @@ export default function UserManagement() {
 
             <Link href="/branchM" passHref>
               <div
-                className={`w-full p-3 rounded-lg text-left flex items-center cursor-pointer transition-all ${router.pathname === "/branchM" ? "bg-emerald-600 shadow-md" : "hover:bg-emerald-600/70"}`}
+                className={`w-full p-3 rounded-lg text-left flex items-center cursor-pointer transition-all ${pathname === "/branchM" ? "bg-emerald-600 shadow-md" : "hover:bg-emerald-600/70"}`}
               >
                 <div
-                  className={`p-1.5 mr-3 rounded-lg ${router.pathname === "/branchM" ? "bg-white text-emerald-700" : "bg-emerald-900/30 text-white"}`}
+                  className={`p-1.5 mr-3 rounded-lg ${pathname === "/branchM" ? "bg-white text-emerald-700" : "bg-emerald-900/30 text-white"}`}
                 >
                   <Home size={18} />
                 </div>
                 <span>Branch Management</span>
-                {router.pathname === "/branchM" && (
+                {pathname === "/branchM" && (
                   <motion.div
                     className="ml-auto w-2 h-2 bg-white rounded-full"
                     initial={{ scale: 0 }}
@@ -429,7 +524,7 @@ export default function UserManagement() {
         </nav>
 
         {/* Main Content */}
-        <main className="flex-1 p-6 bg-gray-50 ml-64">
+        <main className="flex-1 p-6 bg-gray-50 ml-64 overflow-x-hidden">
           {/* Header Section */}
           <motion.div
             initial={{ opacity: 0, y: -20 }}
@@ -505,14 +600,32 @@ export default function UserManagement() {
                   <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
                       <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          User
+                        <th 
+                          className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                          onClick={() => handleSort("name")}
+                        >
+                          <div className="flex items-center gap-1">
+                            User
+                            <SortIndicator columnKey="name" />
+                          </div>
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Username
+                        <th 
+                          className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                          onClick={() => handleSort("username")}
+                        >
+                          <div className="flex items-center gap-1">
+                            Username
+                            <SortIndicator columnKey="username" />
+                          </div>
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Branch
+                        <th 
+                          className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                          onClick={() => handleSort("branch")}
+                        >
+                          <div className="flex items-center gap-1">
+                            Branch
+                            <SortIndicator columnKey="branch" />
+                          </div>
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Status
@@ -525,17 +638,24 @@ export default function UserManagement() {
                     <tbody className="bg-white divide-y divide-gray-200">
                       {isLoading ? (
                         <tr>
-                          <td colSpan="5" className="px-6 py-4 text-center">
-                            Loading users...
+                          <td colSpan="5" className="px-6 py-8 text-center">
+                            <div className="flex justify-center">
+                              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600"></div>
+                            </div>
+                            <p className="text-gray-500 mt-2">Loading users...</p>
                           </td>
                         </tr>
                       ) : currentUsers.length === 0 ? (
                         <tr>
                           <td
                             colSpan="5"
-                            className="px-6 py-4 text-center text-gray-500"
+                            className="px-6 py-8 text-center text-gray-500"
                           >
-                            No users found
+                            <Users className="mx-auto h-12 w-12 text-gray-300 mb-2" />
+                            <p>No users found</p>
+                            {searchQuery && (
+                              <p className="text-sm mt-1">Try adjusting your search</p>
+                            )}
                           </td>
                         </tr>
                       ) : (
@@ -555,7 +675,7 @@ export default function UserManagement() {
                             {/* User Column */}
                             <td className="px-6 py-4 whitespace-nowrap">
                               <div className="flex items-center">
-                                <div className="ml-4">
+                                <div>
                                   <div className="text-sm font-medium text-gray-900">
                                     {user.name}
                                   </div>
@@ -568,7 +688,7 @@ export default function UserManagement() {
 
                             {/* Username Column */}
                             <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="text-sm text-gray-900">
+                              <div className="text-sm text-gray-900 font-mono">
                                 {user.username}
                               </div>
                             </td>
@@ -576,16 +696,16 @@ export default function UserManagement() {
                             {/* Branch Column */}
                             <td className="px-6 py-4 whitespace-nowrap">
                               <div className="text-sm text-gray-900">
-                                {user.branchName}
+                                {user.branchName || "No branch"}
                               </div>
                             </td>
 
                             {/* Status Column */}
                             <td className="px-6 py-4 whitespace-nowrap">
                               <span
-                                className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${user.status === "Active"
-                                  ? "bg-green-100 text-green-800"
-                                  : "bg-gray-100 text-gray-800"
+                                className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${user.status === "Active"
+                                  ? "bg-green-100 text-green-800 border border-green-200"
+                                  : "bg-gray-100 text-gray-800 border border-gray-200"
                                   }`}
                               >
                                 {user.status}
@@ -594,14 +714,14 @@ export default function UserManagement() {
 
                             {/* Actions Column */}
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              <div className="flex space-x-3">
+                              <div className="flex space-x-2">
                                 <motion.button
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     handleEditClick(user);
                                   }}
-                                  className="text-gray-600 hover:text-gray-800"
-                                  whileHover={{ scale: 1.2 }}
+                                  className="p-1.5 text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                                  whileHover={{ scale: 1.1 }}
                                   whileTap={{ scale: 0.9 }}
                                   title="Edit"
                                 >
@@ -612,8 +732,8 @@ export default function UserManagement() {
                                     e.stopPropagation();
                                     fetchUserDetails(user.id);
                                   }}
-                                  className="text-gray-600 hover:text-gray-800"
-                                  whileHover={{ scale: 1.2 }}
+                                  className="p-1.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                  whileHover={{ scale: 1.1 }}
                                   whileTap={{ scale: 0.9 }}
                                   title="View Details"
                                 >
@@ -629,25 +749,25 @@ export default function UserManagement() {
 
                   {/* Pagination Controls */}
                   {totalPages > 1 && (
-                    <div className="flex justify-between items-center mt-4 px-6 py-3 bg-white border-t border-gray-200 rounded-b-xl">
-                      {/* Left side: showing count */}
-                      <span className="text-sm text-gray-600">
-                        Showing {indexOfFirstBranch + 1} to{" "}
-                        {Math.min(indexOfLastBranch, filteredBranches.length)} of{" "}
-                        {filteredBranches.length} branches
+                    <div className="flex flex-col sm:flex-row justify-between items-center mt-4 px-6 py-3 bg-white border-t border-gray-200 rounded-b-xl">
+                      {/* Showing count */}
+                      <span className="text-sm text-gray-600 mb-2 sm:mb-0">
+                        Showing {indexOfFirstUser + 1} to{" "}
+                        {Math.min(indexOfLastUser, sortedUsers.length)} of{" "}
+                        {sortedUsers.length} users
                       </span>
 
-                      {/* Right side: page buttons */}
+                      {/* Page buttons */}
                       <div className="flex items-center space-x-1">
                         <button
-                          className="p-2 rounded hover:bg-gray-100 disabled:opacity-50"
+                          className="p-2 rounded hover:bg-gray-100 disabled:opacity-50 transition-colors"
                           onClick={() => handlePageChange(1)}
                           disabled={currentPage === 1}
                         >
                           <ChevronsLeft size={16} />
                         </button>
                         <button
-                          className="p-2 rounded hover:bg-gray-100 disabled:opacity-50"
+                          className="p-2 rounded hover:bg-gray-100 disabled:opacity-50 transition-colors"
                           onClick={() => handlePageChange(currentPage - 1)}
                           disabled={currentPage === 1}
                         >
@@ -659,7 +779,7 @@ export default function UserManagement() {
                           <button
                             key={page}
                             onClick={() => handlePageChange(page)}
-                            className={`px-3 py-1 rounded-lg text-sm ${currentPage === page
+                            className={`px-3 py-1 rounded-lg text-sm transition-colors ${currentPage === page
                                 ? "bg-emerald-600 text-white"
                                 : "hover:bg-gray-100"
                               }`}
@@ -669,14 +789,14 @@ export default function UserManagement() {
                         ))}
 
                         <button
-                          className="p-2 rounded hover:bg-gray-100 disabled:opacity-50"
+                          className="p-2 rounded hover:bg-gray-100 disabled:opacity-50 transition-colors"
                           onClick={() => handlePageChange(currentPage + 1)}
                           disabled={currentPage === totalPages}
                         >
                           <ChevronRight size={16} />
                         </button>
                         <button
-                          className="p-2 rounded hover:bg-gray-100 disabled:opacity-50"
+                          className="p-2 rounded hover:bg-gray-100 disabled:opacity-50 transition-colors"
                           onClick={() => handlePageChange(totalPages)}
                           disabled={currentPage === totalPages}
                         >
@@ -706,7 +826,7 @@ export default function UserManagement() {
                     </h2>
                     <button
                       onClick={() => setSelectedUser(null)}
-                      className="text-gray-400 hover:text-gray-600"
+                      className="text-gray-400 hover:text-gray-600 transition-colors"
                     >
                       <X size={20} />
                     </button>
@@ -719,24 +839,30 @@ export default function UserManagement() {
                       <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
                         Account Information
                       </h3>
-                      <div className="space-y-2">
+                      <div className="space-y-3">
                         <div className="flex items-start">
                           <User
-                            className="flex-shrink-0 mt-0.5 mr-2 text-gray-400"
+                            className="flex-shrink-0 mt-0.5 mr-3 text-gray-400"
                             size={16}
                           />
-                          <span className="text-sm">
-                            {selectedUser.username || "N/A"}
-                          </span>
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">Username</p>
+                            <p className="text-sm text-gray-600">
+                              {selectedUser.username || "N/A"}
+                            </p>
+                          </div>
                         </div>
                         <div className="flex items-start">
-                          <Shield
-                            className="flex-shrink-0 mt-0.5 mr-2 text-gray-400"
+                          <Home
+                            className="flex-shrink-0 mt-0.5 mr-3 text-gray-400"
                             size={16}
                           />
-                          <span className="text-sm">
-                            {selectedUser.branch || "N/A"}
-                          </span>
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">Branch</p>
+                            <p className="text-sm text-gray-600">
+                              {selectedUser.branchName || selectedUser.branch || "N/A"}
+                            </p>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -747,15 +873,16 @@ export default function UserManagement() {
                         Account Status
                       </h3>
                       <div
-                        className={`p-4 rounded-lg ${selectedUser.status === "Active"
-                          ? "bg-green-100 border border-green-200"
-                          : "bg-gray-100 border border-gray-200"
+                        className={`p-4 rounded-lg border ${selectedUser.status === "Active"
+                          ? "bg-green-50 border-green-200"
+                          : "bg-gray-50 border-gray-200"
                           }`}
                       >
                         <div className="flex justify-between items-center">
-                          <span className="font-medium">
+                          <span className={`font-medium ${selectedUser.status === "Active" ? "text-green-800" : "text-gray-800"}`}>
                             {selectedUser.status}
                           </span>
+                          <div className={`w-2 h-2 rounded-full ${selectedUser.status === "Active" ? "bg-green-500" : "bg-gray-400"}`}></div>
                         </div>
                       </div>
                     </div>
@@ -766,25 +893,31 @@ export default function UserManagement() {
                         <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
                           Contact Information
                         </h3>
-                        <div className="space-y-2">
+                        <div className="space-y-3">
                           <div className="flex items-start">
                             <Mail
-                              className="flex-shrink-0 mt-0.5 mr-2 text-gray-400"
+                              className="flex-shrink-0 mt-0.5 mr-3 text-gray-400"
                               size={16}
                             />
-                            <span className="text-sm">
-                              {selectedUser.email}
-                            </span>
+                            <div>
+                              <p className="text-sm font-medium text-gray-900">Email</p>
+                              <p className="text-sm text-gray-600 break-all">
+                                {selectedUser.email}
+                              </p>
+                            </div>
                           </div>
                           {selectedUser.phone && (
                             <div className="flex items-start">
                               <Phone
-                                className="flex-shrink-0 mt-0.5 mr-2 text-gray-400"
+                                className="flex-shrink-0 mt-0.5 mr-3 text-gray-400"
                                 size={16}
                               />
-                              <span className="text-sm">
-                                {selectedUser.phone}
-                              </span>
+                              <div>
+                                <p className="text-sm font-medium text-gray-900">Phone</p>
+                                <p className="text-sm text-gray-600">
+                                  {selectedUser.phone}
+                                </p>
+                              </div>
                             </div>
                           )}
                         </div>

@@ -459,9 +459,6 @@ export default function BranchManagementPage() {
                           Address
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          User Assigned
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Actions
                         </th>
                       </tr>
@@ -469,14 +466,14 @@ export default function BranchManagementPage() {
                     <tbody className="bg-white divide-y divide-gray-200">
                       {isLoading ? (
                         <tr>
-                          <td colSpan="4" className="px-6 py-4 text-center">
+                          <td colSpan="3" className="px-6 py-4 text-center">
                             Loading branches...
                           </td>
                         </tr>
                       ) : currentBranches.length === 0 ? (
                         <tr>
                           <td
-                            colSpan="4"
+                            colSpan="3"
                             className="px-6 py-4 text-center text-gray-500"
                           >
                             No branches found
@@ -504,11 +501,6 @@ export default function BranchManagementPage() {
                             <td className="px-6 py-4 whitespace-nowrap">
                               <div className="text-sm text-gray-900">
                                 {branch.address}
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="text-sm text-gray-900">
-                                {branch.user_name || "Not assigned"}
                               </div>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -599,25 +591,13 @@ export default function BranchManagementPage() {
 
                     <div>
                       <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                        User Assigned
-                      </h3>
-                      <div className="p-4 rounded-lg bg-gray-50 border border-gray-200">
-                        <div className="text-sm font-medium text-gray-900">
-                          {selectedBranch.user_name || "Not assigned"}
-                        </div>
-
-                      </div>
-                    </div>
-
-                    <div>
-                      <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
                         Branch Statistics
                       </h3>
                       <div className="grid grid-cols-2 gap-4">
                         <div className="p-3 rounded-lg bg-blue-50 border border-blue-100">
                           <div className="text-xs text-blue-800">Users</div>
                           <div className="text-lg font-bold text-blue-900">
-                            {selectedBranch.users || 0}
+                            {selectedBranch.user_count || 0}
                           </div>
                         </div>
                         <div className="p-3 rounded-lg bg-green-50 border border-green-100">
