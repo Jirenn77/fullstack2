@@ -218,6 +218,30 @@ function handleAddUser($pdo, $data)
             return;
         }
 
+        // Validate branch_id exists if provided
+        $branchId = isset($data['branch_id']) && !empty($data['branch_id']) ? (int)$data['branch_id'] : null;
+        
+        if ($branchId !== null) {
+            $branchCheck = $pdo->prepare("SELECT id FROM branches WHERE id = ?");
+            $branchCheck->execute([$branchId]);
+            if (!$branchCheck->fetch()) {
+                http_response_code(400);
+                echo json_encode([
+                    "success" => false,
+                    "message" => "Invalid branch selected"
+                ]);
+                return;
+            }
+            
+            // Get branch name for the legacy branch field
+            $branchStmt = $pdo->prepare("SELECT name FROM branches WHERE id = ?");
+            $branchStmt->execute([$branchId]);
+            $branch = $branchStmt->fetch(PDO::FETCH_ASSOC);
+            $branchName = $branch['name'] ?? null;
+        } else {
+            $branchName = null;
+        }
+
         $check = $pdo->prepare("SELECT user_id FROM users WHERE email = ?");
         $check->execute([$data['email']]);
         if ($check->fetch()) {
@@ -239,8 +263,8 @@ function handleAddUser($pdo, $data)
             ':username' => $data['username'],
             ':email' => $data['email'],
             ':password' => $data['password'],
-            ':branch' => $data['branch'] ?? null,
-            ':branch_id' => $data['branch_id'] ?? null,
+            ':branch' => $branchName, // Use the branch name we fetched
+            ':branch_id' => $branchId, // Use the validated branch_id
             ':status' => $data['status'] ?? 'Active',
         ]);
 

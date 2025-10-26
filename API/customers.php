@@ -152,7 +152,7 @@ if (isset($_GET['customerId'])) {
             'remainingBalance' => $membership['remaining_balance'],
             'dateRegistered' => $membership['date_registered'],
             'expireDate' => $membership['expire_date'],
-            'expire_date' => $membership['expire_date'],
+            'expire_date' => $membership['expire_date'],    
             'membershipName' => $membership['membership_name'] // Add this line
         ];
     } else {
@@ -169,7 +169,6 @@ if (isset($_GET['customerId'])) {
         $t['date'] = date("M d, Y", strtotime($t['invoice_date']));
         $t['service'] = $t['services'];
         $t['amount'] = (float) $t['amount'];
-        $t['status'] = $t['status'];
         unset($t['invoice_date'], $t['services']);
     }
 
@@ -227,7 +226,6 @@ foreach ($customers as &$customer) {
         $t['date'] = date("M d, Y", strtotime($t['invoice_date']));
         $t['service'] = $t['services'];
         $t['amount'] = (float) $t['amount'];
-        $t['status'] = $t['status'];
         unset($t['invoice_date'], $t['services']);
     }
 
